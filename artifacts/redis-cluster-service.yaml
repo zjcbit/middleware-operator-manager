@@ -1,0 +1,18 @@
+# service提供域名，映射到pod IP
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    # RedisCluster Metadata.name
+    app: {RedisCluster Metadata.name}
+  name: {RedisCluster Metadata.name}
+  namespace: {RedisCluster Metadata.namespace}
+spec:
+  clusterIP: None
+  ports:
+  - name: {RedisCluster Metadata.name}-6379
+    port: 6379
+    targetPort: 6379
+  selector:
+    app: {RedisCluster Metadata.name}
+

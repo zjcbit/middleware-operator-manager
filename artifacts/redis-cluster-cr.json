@@ -1,0 +1,111 @@
+{
+    "apiVersion": "redis.middleware.hc.cn/v1alpha1",
+    "kind": "RedisCluster",
+    "metadata": {
+        "clusterName": "",
+        "creationTimestamp": "2019-03-27T01:57:41Z",
+        "name": "example111-redis-cluster",
+        "namespace": "kube-system",
+        "resourceVersion": "22920864",
+        "selfLink": "/apis/redis.middleware.hc.cn/v1alpha1/namespaces/kube-system/redisclusters/example111-redis-cluster",
+        "uid": "b4677bf5-5033-11e9-a1cf-005056bc48f4"
+    },
+    "spec": {
+        "pause": true,
+        "pod": [
+            {
+                "affinity": {
+                    "nodeAffinity": null,
+                    "podAntiAffinity": {},
+                    "requiredDuringSchedulingIgnoredDuringExecution": {
+                        "nodeSelectorTerms": [
+                            {
+                                "matchExpressions": [
+                                    {
+                                        "key": "HarmonyCloud_Status",
+                                        "operator": "In",
+                                        "values": [
+                                            "C"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                "annotations": {
+                    "key": "value"
+                },
+                "configmap": "name",
+                "env": [
+                    {
+                        "name": "tony",
+                        "value": "aa"
+                    },
+                    {
+                        "name": "MAXMEMORY",
+                        "value": "2gb"
+                    }
+                ],
+                "initImage": "string",
+                "labels": {
+                    "key": "value"
+                },
+                "monitorImage": "string",
+                "resource": {
+                    "limits": {
+                        "cpu": "2",
+                        "memeory": "4Gi"
+                    },
+                    "request": {
+                        "cpu": "1",
+                        "memeory": "2Gi"
+                    }
+                },
+                "updateStrategy": {
+                    "type": "RollingUpdate"
+                },
+                "volumes": {
+                    "persistentVolumeClaimName": "pvcName",
+                    "type": "nfs"
+                }
+            }
+        ],
+        "replicas": 7,
+        "repository": "library/redis",
+        "updateStrategy": {
+            "assignStrategies": [
+                {
+                    "fromReplicas": "nodeId1,nodeId2",
+                    "slots": 2000
+                },
+                {
+                    "fromReplicas": "nodeId3,nodeId4",
+                    "slots": 1000
+                }
+            ],
+            "type": "AssignReceive"
+        },
+        "version": "3.2.8"
+    },
+    "status": {
+        "conditions": [
+            {
+                "domainName": "redis-cluster-0.redis-cluster.kube-system.svc.cluster.local",
+                "hostIP": "192.168.26.122",
+                "hostname": "docker-vm-3",
+                "lastTransitionTime": "2019-03-25T03:10:29Z",
+                "message": "xxxx",
+                "name": "redis-cluster-0",
+                "nodeId": "allkk111snknkcs",
+                "reason": "xxxx",
+                "slots": 1024,
+                "status": "True",
+                "type": "master"
+            }
+        ],
+        "phase": "Creating",
+        "reason": "异常问题",
+        "replicas": 6
+    }
+}

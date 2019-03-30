@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {RedisClusterName-pv}
+  namespace: {RedisClusterNamespace}
+  labels:
+    type: {RedisClusterName-storage}
+spec:
+  capacity:
+    storage: {pv容量,如2Gi}
+  accessModes:
+    - ReadWriteOnce
+  nfs:
+    # nfs地址{可变}
+    server: {nfs地址,如192.168.26.46}
+    path: /nfs/redis/{k8s集群域名,如cluster.local}/{redis集群ns,如kube-system}
+  persistentVolumeReclaimPolicy: Retain

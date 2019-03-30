@@ -1,0 +1,107 @@
+apiVersion: redis.middleware.hc.cn/v1alpha1
+kind: RedisCluster
+metadata: 
+  name: example000-redis-cluster
+  namespace: kube-system
+spec:
+  # 代表redis集群的个数
+  replicas: 7
+  # 代表是否进入维修状态
+  pause: true 
+  # 镜像地址
+  repository: library/redis
+  # 镜像版本，便于后续多版本特化支持
+  version: 3.2.8
+  #redis集群升级策略
+  updateStrategy:
+    # 升级类型为AutoReceive（自动分配,不用AssignStrategies）, AssignReceive（指定值分配，需要用AssignStrategies）
+    type: AssignReceive
+    assignStrategies:
+       - 
+        slots: 2000
+        fromReplicas: nodeId1,nodeId2
+       - 
+        # 从nodeId3,nodeId4一共分配1000个卡槽
+        slots: 1000 
+        # 多个nodeId用逗号分隔
+        fromReplicas: nodeId3,nodeId4
+  # redis 实例配置详情
+  pod:
+    # 标签管理：map[string][string]
+  - labels:
+      key: value
+    # 备注管理：map[string][string]
+    annotations:
+      key: value
+    # 环境变量管理
+    env:
+    - name: tony
+      value: aa
+    - name: MAXMEMORY
+      value: 2gb    
+    # 亲和性管理
+    affinity: 
+      nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: HarmonyCloud_Status
+            operator: In
+            values:
+            - C
+      podAntiAffinity: {}
+    # 资源管理
+    resources:
+      limits: 
+        #cpu, memory, storage,ephemeral-storage
+        cpu: "2"
+        memory: 4Gi
+      requests:
+        cpu: "1"
+        memory: 2Gi
+    #statefulset更新模式
+    updateStrategy:
+      type: RollingUpdate
+    # 支持挂载形式： hostPath(不需要persistentVolumeClaimName)，nfs(需要persistentVolumeClaimName)
+    volumes:
+      type: nfs
+      persistentVolumeClaimName: pvcName
+    # 配置文件模板名
+    configmap: name
+    # 监控镜像
+    monitorImage: string
+    # 初始化镜像
+    initImage: string
+    # 中间件容器镜像
+    middlewareImage: string
+
+status:
+  #当前statefulset replicas情况
+  replicas: 6
+  # 集群阶段,None,Creating,Running,Failed,Scaling
+  # None 或 “”， 就是代表该CRD刚创建
+  # Creating 代表等待redis资源对象创建完毕（operator 发现CRD创建，创建资源对象，更新状态）
+  # Running 代表已进行初始化操作（在Creating之后，发现实例起来完毕，初始化操作）
+  # Failed 代表着某异常故障
+  # ---------------------
+  # Scaling 代表着实例不一致(用户修改实例，operator发现实例不一致，更新statefulset，更新状态)
+  # Upgrading 代表着升级中
+  # ---------------------
+  phase: Creating
+  # 异常问题解释
+  reason: "异常问题"
+  conditions:
+  - name: redis-cluster-0
+    instanceIP: 10.168.78.90
+    type: master
+    masterNodeId: allkk111snknkcs
+    nodeId: allkk111snknkcs
+    domainName: redis-cluster-0.redis-cluster.kube-system.svc.cluster.local
+    slots: 1024
+    hostname: docker-vm-3
+    hostIP: 192.168.26.122
+    # true or flase 
+    status: "True"
+    reason: xxxx
+    message: xxxx
+    lastTransitionTime: 2019-03-25T03:10:29Z

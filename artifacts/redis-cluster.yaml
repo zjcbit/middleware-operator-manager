@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: {RedisCluster.metadata.name}
+  name: {RedisCluster.metadata.name}
+  namespace: {RedisCluster.metadata.namespace}
+spec:
+  # 实例数{可变}
+  replicas: {RedisCluster.spec.replicas}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: {RedisCluster.metadata.name}
+  serviceName: {RedisCluster.metadata.name}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: {RedisCluster.metadata.name}
+    spec:
+      containers:
+      - command:
+        - /bin/redis-server 
+        - /nfs/redis/$(DOMAINNAME)/$(NAMESPACE)/$(POD_NAME)/config/redis.conf
+        image: {RedisCluster.spec.repository:RedisCluster.spec.version}
+        imagePullPolicy: Always
+        env:
+        - name: DOMAINNAME
+          value: {RedisCluster.spec.pod.env.DOMAINNAME如cluster.local}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        name: {RedisCluster.metadata.name}
+        ports:
+        - containerPort: 6379
+          protocol: TCP
+        - containerPort: 16379
+          protocol: TCP
+        # 健康检查，执行redis-cli -h {hostname} ping
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - /data/health-check.sh
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          exec:
+            command:
+            - sh
+            - /data/health-check.sh
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        resources: {RedisCluster.spec.resource}
+        volumeMounts:
+        # 挂载data、log、config目录到共享存储，{集群域名、namespace可变}
+        - mountPath: /nfs/redis/{RedisCluster.spec.pod.env.DOMAINNAME如cluster.local}/{RedisCluster.metadata.namespace}
+          name: redis-data
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - sh
+        - /init.sh
+        env:
+        - name: DOMAINNAME
+          value: {RedisCluster.spec.pod.env.DOMAINNAME如cluster.local}
+        - name: MAXMEMORY
+          value: {2/3*RedisCluster.spec.resource.limits.memory}gb 
+        - name: PODIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        # init container镜像，执行目录的创建，redis.conf的占位符填充等初始化操作
+        image: {RedisCluster.spec.repository/RedisCluster.spec.pod.initImage}
+        imagePullPolicy: Always
+        name: init
+        resources: {}
+        volumeMounts:
+        - mountPath: /config/redis.conf
+          name: redis-config
+          subPath: redis.conf
+        # 挂载data、log、config目录到共享存储，{集群域名、namespace可变}
+        - mountPath: /nfs/redis/{RedisCluster.spec.pod.env.DOMAINNAME如cluster.local}/{RedisCluster.metadata.namespace}
+          name: redis-data
+      restartPolicy: Always
+      # 节点选择，{可变}
+      nodeSelector:
+        kubernetes.io/hostname: ly1f-yanfa-20180607-docker-vm-3.novalocal
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: {RedisCluster.metadata.name}-config
+        name: redis-config
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: {RedisCluster.spec.pod.volumes.persistentVolumeClaimName}
