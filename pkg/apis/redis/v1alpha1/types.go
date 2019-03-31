@@ -35,7 +35,7 @@ type RedisClusterConditionType string
 
 const (
 	MasterConditionType RedisClusterConditionType = "master"
-	SalveConditionType  RedisClusterConditionType = "salve"
+	SlaveConditionType  RedisClusterConditionType = "slave"
 )
 
 type RedisClusterPhase string
@@ -190,7 +190,7 @@ type RedisClusterCondition struct {
 
 	DomainName string `json:"domainName,omitempty" protobuf:"bytes,4,opt,name=domainName"`
 
-	Slots    int32  `json:"slots,omitempty" protobuf:"bytes,4,opt,name=slots"`
+	Slots    string  `json:"slots,omitempty" protobuf:"bytes,4,opt,name=slots"`
 	Hostname string `json:"hostname,omitempty" protobuf:"bytes,4,opt,name=hostname"`
 	HostIP   string `json:"hostIP,omitempty" protobuf:"bytes,4,opt,name=hostIP"`
 	// Status of the condition, one of True, False, Unknown.

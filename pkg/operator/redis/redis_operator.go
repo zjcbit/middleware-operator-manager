@@ -50,6 +50,7 @@ import (
 	"harmonycloud.cn/middleware-operator-manager/util"
 	"strconv"
 	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app/options"
+	"encoding/json"
 )
 
 const (
@@ -151,8 +152,7 @@ func (rco *RedisClusterOperator) addRedisCluster(obj interface{}) {
 	rc := obj.(*redistype.RedisCluster)
 	glog.V(4).Infof("Adding RedisCluster %s", rc.Name)
 
-	rco.updateRedisClusterStatus(rc, nil, redistype.RedisClusterNone, "")
-
+	//rco.updateRedisClusterStatus(rc, nil, redistype.RedisClusterNone, "")
 	rco.enqueueRedisCluster(rc)
 }
 
@@ -290,6 +290,13 @@ func (rco *RedisClusterOperator) syncRedisCluster(key string) error {
 		return err
 	}
 
+	// 必须要先声明defer，否则不能捕获到panic异常
+	defer func(){
+		if err := recover(); err != nil{
+			// 这里的err其实就是panic传入的内容
+			glog.Errorf("recover panic error: %v", err)
+		}
+	}()
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
 	//d := redisCluster.DeepCopy()
@@ -312,6 +319,11 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 	if err != nil {
 		return err
 	}
+
+	rc, _ := json.Marshal(redisCluster)
+
+	//TODO 调试用
+	glog.V(4).Infof("** RedisCluster: %v", string(rc))
 
 	//1、取到redisCluster对象，开始判断是否是第一次创建，用redisCluster.namespaces和redisCluster.name绑定statefulset
 
@@ -340,7 +352,8 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		return err
 	} else {
 		//可能是升级操作也可能是强制同步;升级操作实例和当前sts实例不一样
-		if *redisCluster.Spec.Replicas == *existSts.Spec.Replicas {
+		//redisCluster里实例数小于当前sts实例数,只检查状态不进行缩容,TODO 缩容需求
+		if *redisCluster.Spec.Replicas <= *existSts.Spec.Replicas {
 			return rco.checkAndUpdateRedisClusterStatus(redisCluster)
 		} else {
 			//实例不一样则为扩容升级操作
@@ -352,11 +365,14 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 	if isInit {
 
 		//更新状态为Creating
-		rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterCreating, "")
+		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterCreating, "")
+		if err != nil {
+			return err
+		}
 
 		//create service
 		recService := rco.buildRedisClusterService(namespace, name)
-		_, err := rco.defaultClient.CoreV1().Services(namespace).Create(recService)
+		_, err = rco.defaultClient.CoreV1().Services(namespace).Create(recService)
 
 		if errors.IsAlreadyExists(err) {
 			glog.Warningf("redis cluster create service: %v/%v Is Already Exists", namespace, name)
@@ -364,7 +380,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 			return fmt.Errorf("init redis cluster create service: %v/%v is error: %v", namespace, name, err)
 		}
 
-		recSts := rco.buildRedisClusterStatefulset(namespace, name, redisCluster)
+		recSts := rco.buildRedisClusterStatefulset(namespace, name, newRedisCluster)
 		//create statefulset
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(namespace).Create(recSts)
 
@@ -373,7 +389,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//检测endpoint pod都ready,则创建和初始化集群
-		rco.createAndInitRedisCluster(sts, redisCluster)
+		rco.createAndInitRedisCluster(sts, newRedisCluster)
 	} else {
 
 		//卡槽分配策略手动,但分配详情有误
@@ -385,10 +401,13 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//更新状态为Scaling
-		rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterScaling, "")
+		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterScaling, "")
+		if err != nil {
+			return err
+		}
 
 		//升级集群
-		recSts := rco.buildRedisClusterStatefulset(namespace, name, redisCluster)
+		recSts := rco.buildRedisClusterStatefulset(namespace, name, newRedisCluster)
 		//update statefulset
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(namespace).Update(recSts)
 
@@ -397,7 +416,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//检测endpoint pod都ready,则升级扩容集群
-		rco.upgradeRedisCluster(sts, redisCluster)
+		rco.upgradeRedisCluster(sts, newRedisCluster)
 	}
 
 	return nil
@@ -420,13 +439,18 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus (redisCluster 
 	reference := endpoints.Subsets[0].Addresses[0].TargetRef
 
 	clusterStatusIsOK, err := rco.execClusterInfo(redisCluster, clusterInstanceIp, reference.Name, reference.Namespace)
-	if err != nil || !clusterStatusIsOK{
+	if err != nil {
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, err.Error())
 		return err
 	}
 
-	rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, "")
-	return nil
+	if !clusterStatusIsOK {
+		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, "cluster state fail")
+		return nil
+	}
+
+	_, err = rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, "")
+	return err
 }
 
 //redis-cli -c -h 10.16.78.90 -p 6379 cluster info
@@ -437,7 +461,7 @@ func (rco *RedisClusterOperator) execClusterInfo (redisCluster *redistype.RedisC
 	glog.Infof("clusterInfoCmd stdout: %v -- stderr: %v -- error: %v ", stdout, stderr, err)
 
 	if err != nil || stderr != "" {
-		err := fmt.Errorf("exec cluster nodes Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", clusterInfoCmd, stdout, stderr, err)
+		err := fmt.Errorf("exec cluster nodes Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", clusterInfoCmd, stdout, stderr, err)
 		glog.Errorf(err.Error())
 		return false, err
 	}
@@ -449,13 +473,6 @@ func (rco *RedisClusterOperator) execClusterInfo (redisCluster *redistype.RedisC
 
 //升级redis集群
 func (rco *RedisClusterOperator) upgradeRedisCluster(sts *appsv1.StatefulSet, redisCluster *redistype.RedisCluster) error {
-	// 必须要先声明defer，否则不能捕获到panic异常
-	defer func(){
-		if err := recover(); err != nil{
-			// 这里的err其实就是panic传入的内容
-			glog.Errorf("recover panic error: %v", err)
-		}
-	}()
 
 	//这里将阻塞
 	endpoints, err := rco.checkPodInstanceIsReadyByEndpoint(sts)
@@ -543,19 +560,19 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 	for _, info := range nodeInfos {
 		info.
 	}*/
-	//diffIps分组master和salve
+	//diffIps分组master和slave
 	//TODO 根据节点分组
-/*	var newMasterInstanceIPs, newSalveInstanceIPs []string
+/*	var newMasterInstanceIPs, newSlaveInstanceIPs []string
 	for i := 0; i < diffIpsLen; i++ {
 		if i < (len(diffIPs) / 2) {
 			newMasterInstanceIPs = append(newMasterInstanceIPs, diffIPs[i])
 		} else {
-			newSalveInstanceIPs = append(newSalveInstanceIPs, diffIPs[i])
+			newSlaveInstanceIPs = append(newSlaveInstanceIPs, diffIPs[i])
 		}
 	}*/
 	//获取已有redis集群信息以及当前新起来的pod实例信息
 	/*addresses := endpoints.Subsets[0].Addresses
-	existInstanceIps, existInstanceNames, existNodeIds, newSalveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, addresses)
+	existInstanceIps, existInstanceNames, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, addresses)
 	if err != nil {
 		return err
 	}
@@ -599,8 +616,8 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 		return err
 	}
 
-	//4、给新master加salve
-	err = rco.addSalveToClusterMaster(newSalveInstanceIPs, newMasterInstanceIPs, newMasterNodeIds, reference)
+	//4、给新master加slave
+	err = rco.addSlaveToClusterMaster(newSlaveInstanceIPs, newMasterInstanceIPs, newMasterNodeIds, reference)
 	if err != nil {
 		return err
 	}*/
@@ -613,6 +630,10 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 	//延时2秒,查询开始自动分配卡槽和新master
 	time.Sleep(2 * time.Second)
 
+	if endpoints.Subsets == nil {
+		return fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
+	}
+
 	reference := endpoints.Subsets[0].Addresses[0].TargetRef
 
 	//执行rebalance命令,将16384个卡槽平均分配到新master节点
@@ -624,7 +645,7 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 	}
 
 
-	//需要阻塞2s去查询集群node信息,否则加入salve可能查到的是master
+	//需要阻塞2s去查询集群node信息,否则加入slave可能查到的是master
 	time.Sleep(2 * time.Second)
 	nodeInfos, err := rco.execClusterNodes(existInstanceIps[0], redisCluster.Namespace, existInstanceNames[0])
 	if err != nil {
@@ -642,7 +663,7 @@ func (rco *RedisClusterOperator) manualAssignSlotToRedisCluster(endpoints *v1.En
 
 	//1、加入新master
 
-	//2、给新master加入salve
+	//2、给新master加入slave
 
 	//3、reshare分配卡槽
 
@@ -654,6 +675,10 @@ func (rco *RedisClusterOperator) manualAssignSlotToRedisCluster(endpoints *v1.En
 	//延时2秒,查询开始自动分配卡槽和新master
 	time.Sleep(2 * time.Second)
 
+	if endpoints.Subsets == nil {
+		return fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
+	}
+
 	reference := endpoints.Subsets[0].Addresses[0].TargetRef
 
 	//执行reshare命令,将指定nodeId个卡槽分配到新master节点
@@ -664,7 +689,7 @@ func (rco *RedisClusterOperator) manualAssignSlotToRedisCluster(endpoints *v1.En
 		return err
 	}
 
-	//需要阻塞2s去查询集群node信息,否则加入salve可能查到的是master
+	//需要阻塞2s去查询集群node信息,否则加入slave可能查到的是master
 	time.Sleep(2 * time.Second)
 	nodeInfos, err := rco.execClusterNodes(existInstanceIps[0], redisCluster.Namespace, existInstanceNames[0])
 	if err != nil {
@@ -679,13 +704,6 @@ func (rco *RedisClusterOperator) manualAssignSlotToRedisCluster(endpoints *v1.En
 }
 
 func (rco *RedisClusterOperator) createAndInitRedisCluster(sts *appsv1.StatefulSet, redisCluster *redistype.RedisCluster) error {
-	// 必须要先声明defer，否则不能捕获到panic异常
-	defer func(){
-		if err := recover(); err != nil{
-			// 这里的err其实就是panic传入的内容
-			glog.Errorf("recover panic error: %v", err)
-		}
-	}()
 
 	//这里将阻塞
 	endpoints, err := rco.checkPodInstanceIsReadyByEndpoint(sts)
@@ -694,6 +712,10 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(sts *appsv1.StatefulS
 		//更新状态为Failing
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, err.Error())
 		return err
+	}
+
+	if endpoints.Subsets == nil {
+		return fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
 	}
 
 	//实例全部ready初始化集群
@@ -712,13 +734,13 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(sts *appsv1.StatefulS
 
 	}*/
 	//TODO 主从节点选择
-	var masterInstanceIps, salveInstanceIps []string
+	var masterInstanceIps, slaveInstanceIps []string
 	count := len(endpoints.Subsets[0].Addresses)
 	for i, addr := range endpoints.Subsets[0].Addresses {
 		if i < (count / 2) {
 			masterInstanceIps = append(masterInstanceIps, addr.IP)
 		} else {
-			salveInstanceIps = append(salveInstanceIps, addr.IP)
+			slaveInstanceIps = append(slaveInstanceIps, addr.IP)
 		}
 	}
 
@@ -739,7 +761,7 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(sts *appsv1.StatefulS
 		return err
 	}
 
-	if len(nodeInfos) != len(salveInstanceIps) {
+	if len(nodeInfos) != len(slaveInstanceIps) {
 		err := fmt.Errorf("current redis cluster: %v/%v status is error", redisCluster.Namespace, redisCluster.Name)
 		glog.Errorf(err.Error())
 		//更新状态为Running
@@ -752,16 +774,16 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(sts *appsv1.StatefulS
 		masterInstanceNodeIds = append(masterInstanceNodeIds, info.NodeId)
 	}
 	
-	//给新建集群的master加入salve
+	//给新建集群的master加入slave
 	//redis-trib.rb add-node --slave --master-id 1d91acc0 10.168.78.82:6379 10.168.78.83:6379
-	err = rco.addSalveToClusterMaster(salveInstanceIps, masterInstanceIps, masterInstanceNodeIds, reference)
+	err = rco.addSlaveToClusterMaster(slaveInstanceIps, masterInstanceIps, masterInstanceNodeIds, reference)
 	if err != nil {
 		//更新状态为Running
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())
 		return err
 	}
 
-	//需要阻塞2s去查询集群node信息,否则加入salve可能查到的是master
+	//需要阻塞2s去查询集群node信息,否则加入slave可能查到的是master
 	time.Sleep(2 * time.Second)
 	nodeInfos, err = rco.execClusterNodes(masterInstanceIps[0], redisCluster.Namespace, endpoints.Subsets[0].Addresses[0].TargetRef.Name)
 
@@ -784,7 +806,7 @@ func (rco *RedisClusterOperator) execClusterNodes (clusterInstanceIp, podNamespa
 	glog.Infof("clusterNodeInfosCmd stdout: %v -- stderr: %v -- error: %v ", stdout, stderr, err)
 
 	if err != nil || stderr != "" {
-		err := fmt.Errorf("exec cluster nodes Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", clusterNodeInfosCmd, stdout, stderr, err)
+		err := fmt.Errorf("exec cluster nodes Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n", clusterNodeInfosCmd, stdout, stderr, err)
 		glog.Errorf(err.Error())
 		return []*redisNodeInfo{}, err
 	}
@@ -801,15 +823,16 @@ func (rco *RedisClusterOperator) execClusterNodes (clusterInstanceIp, podNamespa
 
 		info := strings.Fields(lineInfo)
 
-		if len(info) != 9 && len(info) != 8 {
+		if len(info) < 8 {
 			continue
 		}
 
+		//glog.Infof("nodeInfo: %v ", info)
 		nodeInfo := &redisNodeInfo{}
 		nodeInfo.NodeId = info[0]
 		nodeInfo.IpPort = info[1]
 
-		//处理myself,salve或者myself,master
+		//处理myself,slave或者myself,master
 		if strings.Contains(info[2], "myself") {
 			nodeInfo.Flags = strings.Split(info[2], ",")[1]
 		} else {
@@ -822,9 +845,9 @@ func (rco *RedisClusterOperator) execClusterNodes (clusterInstanceIp, podNamespa
 		nodeInfo.ConfigEpoch = info[6]
 		nodeInfo.LinkState = info[7]
 
-		//salve没有slot,也可能master没分配slot
-		if len(info) == 9 {
-			nodeInfo.Slot = info[8]
+		//slave没有slot,也可能master没分配slot
+		if len(info) >= 9 {
+			nodeInfo.Slot = strings.Join(info[8:], " ")
 		}
 
 		nodeInfos = append(nodeInfos, nodeInfo)
@@ -871,7 +894,7 @@ func (rco *RedisClusterOperator) checkPodInstanceIsReadyByEndpoint (sts *appsv1.
 //更新redisCluster对象的状态
 //从创建RedisCluster对象开始起协程处理,该对象被删除后,协程退出
 //入参：chan deepcopy后的redistype.RedisCluster
-func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints, phase redistype.RedisClusterPhase, abnormalReason string) error {
+func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints, phase redistype.RedisClusterPhase, abnormalReason string) (*redistype.RedisCluster, error) {
 
 	switch phase {
 		//代表该CRD刚创建
@@ -882,16 +905,17 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		}
 		//代表等待redis资源对象创建完毕
 	case redistype.RedisClusterCreating:
-		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
+		/*sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
 
 		if err != nil {
 			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
 			return err
-		}
+		}*/
 
 		redisCluster.Status = redistype.RedisClusterStatus {
-			Replicas: *sts.Spec.Replicas,
+			//Replicas: *sts.Spec.Replicas,
+			Replicas: 0,
 			Phase: redistype.RedisClusterCreating,
 			Reason: abnormalReason,
 		}
@@ -903,8 +927,12 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		if endpoints == nil {
 			endpoints, err = rco.defaultClient.CoreV1().Endpoints(redisCluster.Namespace).Get(redisCluster.GetName(), metav1.GetOptions{})
 			if err != nil {
-				return fmt.Errorf("update redisCluster status -- get redis cluster endpoint is error: %v", err)
+				return redisCluster, fmt.Errorf("update redisCluster status -- get redis cluster endpoint is error: %v", err)
 			}
+		}
+
+		if endpoints.Subsets == nil {
+			return redisCluster, fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
 		}
 
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
@@ -912,14 +940,14 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		if err != nil {
 			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
-			return err
+			return redisCluster, err
 		}
 
 		clusterConditions, err := rco.buildRedisClusterStatusConditions(redisCluster, endpoints)
 		if err != nil {
 			err = fmt.Errorf("redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
-			return err
+			return redisCluster, err
 		}
 
 		redisCluster.Status = redistype.RedisClusterStatus {
@@ -936,7 +964,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		if err != nil {
 			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
-			return err
+			return redisCluster, err
 		}
 		redisCluster.Status.Replicas = *sts.Spec.Replicas
 		redisCluster.Status.Phase = redistype.RedisClusterScaling
@@ -949,7 +977,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		if err != nil {
 			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
-			return err
+			return redisCluster, err
 		}
 		redisCluster.Status.Replicas = *sts.Spec.Replicas
 		redisCluster.Status.Phase = redistype.RedisClusterUpgrading
@@ -962,7 +990,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 		if err != nil {
 			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 			glog.Errorf(err.Error())
-			return err
+			return redisCluster, err
 		}
 		redisCluster.Status.Replicas = *sts.Spec.Replicas
 		redisCluster.Status.Phase = redistype.RedisClusterFailed
@@ -970,18 +998,22 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus (redisCluster *redisty
 	}
 
 	//TODO 1.10以下版本的k8s是否对子资源支持？
-	updatedRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).UpdateStatus(redisCluster)
-	//rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Update(&redisCluster)
+	//updatedRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).UpdateStatus(redisCluster)
+	newRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Update(redisCluster)
 	if err != nil {
-		err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", updatedRedisCluster.Namespace, updatedRedisCluster.Name, err)
+		err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
 		glog.Errorf(err.Error())
-		return err
+		return newRedisCluster, err
 	}
 
-	return nil
+	return newRedisCluster, nil
 }
 
 func (rco *RedisClusterOperator) buildRedisClusterStatusConditions (redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints) ([]redistype.RedisClusterCondition, error){
+
+	if endpoints.Subsets == nil {
+		return []redistype.RedisClusterCondition{}, fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
+	}
 
 	address := endpoints.Subsets[0].Addresses
 	nodeInfos, err := rco.execClusterNodes(address[0].IP, address[0].TargetRef.Namespace, address[0].TargetRef.Name)
@@ -1027,21 +1059,22 @@ func (rco *RedisClusterOperator) buildRedisClusterStatusConditions (redisCluster
 		condition := redistype.RedisClusterCondition {}
 		condition.NodeId = info.NodeId
 		condition.InstanceIP = strings.Split(info.IpPort, ":")[0]
+		condition.Status = v1.ConditionTrue
 		if masterFlagType == info.Flags {
 			condition.Type = redistype.MasterConditionType
-		}
-		//condition.Name =
-		//condition.Status =
-		if info.Slot != "" {
-			i, _ := strconv.Atoi(info.Slot)
-			condition.Slots = int32(i)
+		} else if slaveFlagType == info.Flags {
+			condition.Type = redistype.SlaveConditionType
 		} else {
-			condition.Slots = 0
+			condition.Status = v1.ConditionFalse
 		}
+
+		//glog.Infof("nodeInfo: %v ", info)
+		condition.Slots = info.Slot
 
 		condition.MasterNodeId = info.Master
 
 		instanceInfo := instanceInfoMap[condition.InstanceIP]
+		condition.Name = instanceInfo.HostName
 		condition.Hostname = instanceInfo.HostName
 		condition.DomainName = instanceInfo.DomainName
 		condition.HostIP = instanceInfo.HostIP
@@ -1427,7 +1460,7 @@ func (rco *RedisClusterOperator) createCluster (masterInstanceIps []string, refe
 	stdout, stderr, err := rco.ExecToPodThroughAPI(commandMaster, "", reference.Name, reference.Namespace, nil)
 
 	if err != nil || stderr != "" {
-		err := fmt.Errorf("exec create Master Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", commandMaster, stdout, stderr, err)
+		err := fmt.Errorf("exec create Master Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", commandMaster, stdout, stderr, err)
 		glog.Errorf(err.Error())
 		return err
 	}
@@ -1436,26 +1469,26 @@ func (rco *RedisClusterOperator) createCluster (masterInstanceIps []string, refe
 	return nil
 }
 
-//给redis集群加入新salve
-func (rco *RedisClusterOperator) addSalveToClusterMaster (salveInstanceIps, masterInstanceIps, masterInstanceNodeIds []string, reference *v1.ObjectReference) error {
+//给redis集群加入新slave
+func (rco *RedisClusterOperator) addSlaveToClusterMaster (slaveInstanceIps, masterInstanceIps, masterInstanceNodeIds []string, reference *v1.ObjectReference) error {
 
-	if len(salveInstanceIps) != len(masterInstanceIps) || len(masterInstanceIps) != len(masterInstanceNodeIds) {
-		return fmt.Errorf("add Salve To ClusterMaster check len error, salveInstanceIps: %v, masterInstanceIps: %v, masterInstanceNodeIds: %v", salveInstanceIps, masterInstanceIps, masterInstanceNodeIds)
+	if len(slaveInstanceIps) != len(masterInstanceIps) || len(masterInstanceIps) != len(masterInstanceNodeIds) {
+		return fmt.Errorf("add Slave To ClusterMaster check len error, slaveInstanceIps: %v, masterInstanceIps: %v, masterInstanceNodeIds: %v", slaveInstanceIps, masterInstanceIps, masterInstanceNodeIds)
 	}
 
-	//给新建集群的master加入salve
+	//给新建集群的master加入slave
 	//redis-trib.rb add-node --slave --master-id 1d91acc0 10.168.78.82:6379 10.168.78.83:6379
-	for i := 0; i < len(salveInstanceIps); i++ {
-		addSalveCommand := fmt.Sprintf("redis-trib.rb add-node --slave --master-id %v %v:6379 %v:6379", masterInstanceNodeIds[i], salveInstanceIps[i], masterInstanceIps[i])
-		commandSalve := []string{"/bin/sh", "-c", addSalveCommand}
-		glog.Infof("add salve cmd: %v", addSalveCommand)
-		stdout, stderr, err := rco.ExecToPodThroughAPI(commandSalve, "", reference.Name, reference.Namespace, nil)
+	for i := 0; i < len(slaveInstanceIps); i++ {
+		addSlaveCommand := fmt.Sprintf("redis-trib.rb add-node --slave --master-id %v %v:6379 %v:6379", masterInstanceNodeIds[i], slaveInstanceIps[i], masterInstanceIps[i])
+		commandSlave := []string{"/bin/sh", "-c", addSlaveCommand}
+		glog.Infof("add slave cmd: %v", addSlaveCommand)
+		stdout, stderr, err := rco.ExecToPodThroughAPI(commandSlave, "", reference.Name, reference.Namespace, nil)
 		if err != nil || stderr != "" {
-			err := fmt.Errorf("redisCluster: %v/%v -- add new salve to cluster is error -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", reference.Namespace, reference.Name, stdout, stderr, err)
+			err := fmt.Errorf("redisCluster: %v/%v -- add new slave to cluster is error -- stdout: %v\n -- stderr: %v\n -- error: %v", reference.Namespace, reference.Name, stdout, stderr, err)
 			glog.Errorf(err.Error())
 			return err
 		}
-		glog.V(4).Infof("redisCluster: %v/%v add new salve to cluster: -- \nstdout: %v", reference.Namespace, reference.Name, stdout)
+		glog.V(4).Infof("redisCluster: %v/%v add new slave to cluster: -- \nstdout: %v", reference.Namespace, reference.Name, stdout)
 	}
 
 	return nil
@@ -1471,7 +1504,7 @@ func (rco *RedisClusterOperator) addMasterNodeToRedisCluster (newMasterInstanceI
 		stdout, stderr, err := rco.ExecToPodThroughAPI(commandMaster, "", existInstanceOneName, reference.Namespace, nil)
 
 		if err != nil || stderr != "" {
-			err := fmt.Errorf("redisCluster: %v/%v -- add new master to cluster is error -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", reference.Namespace, reference.Name, stdout, stderr, err)
+			err := fmt.Errorf("redisCluster: %v/%v -- add new master to cluster is error -- stdout: %v\n -- stderr: %v\n -- error: %v", reference.Namespace, reference.Name, stdout, stderr, err)
 			glog.Errorf(err.Error())
 			return err
 		}
@@ -1488,7 +1521,7 @@ func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode (existIn
 	stdout, stderr, err := rco.ExecToPodThroughAPI(commandRebalance, "", existInstanceName, reference.Namespace, nil)
 
 	if err != nil || stderr != "" {
-		err := fmt.Errorf("redisCluster: %v/%v -- rebalanceCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", reference.Namespace, reference.Name, commandRebalance, stdout, stderr, err)
+		err := fmt.Errorf("redisCluster: %v/%v -- rebalanceCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", reference.Namespace, reference.Name, commandRebalance, stdout, stderr, err)
 		glog.Errorf(err.Error())
 		return err
 	}
@@ -1498,23 +1531,62 @@ func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode (existIn
 	return nil
 }
 
+
+
 //reshare手动调整卡槽
 //redis-trib.rb reshard --from c49a3b06ad93638037d56855ff702787ad16e3ea --to 174ad1122349c33c475dcbd54489ea847ad8474f --slots 100 --yes 10.168.78.119:6379
 func (rco *RedisClusterOperator) reshareRedisClusterSlotsToMasterNode (assignStrategies []redistype.SlotsAssignStrategy, existInstanceIp, existInstanceName string, newMasterNodeIds []string, reference *v1.ObjectReference) error {
 
 	for i, nodeId := range newMasterNodeIds {
-		reshareCmd := fmt.Sprintf(" redis-trib.rb reshard --from %v --to %v --slots %v --yes %v:6379 ", assignStrategies[i].FromReplicas, nodeId, assignStrategies[i].Slots, existInstanceIp)
+
+		f := wait.ConditionFunc(func() (bool, error) {
+
+			err := rco.execCheckRedisCluster(existInstanceIp, existInstanceName, reference)
+
+			if err != nil {
+				return false, fmt.Errorf("check redis cluster is error: %v", err)
+			}
+
+			return true, nil
+		})
+
+		//5s check一次,看集群各节点node状态是否同步,if return true,则开始分配卡槽;
+		// 否则继续检查,总共6分钟后超时,更新redisCluster状态为创建集群超时
+		timeout := rco.options.ClusterTimeOut
+		err := wait.Poll(5 * time.Second, time.Duration(timeout) * time.Minute, f)
+		if err != nil || err == wait.ErrWaitTimeout {
+			//升级集群超时
+			err := fmt.Errorf("check redisCluster: %v/%v status error: %v, upgrade failed", reference.Namespace, reference.Name, err)
+			glog.Errorf(err.Error())
+			return err
+		}
+
+		reshareCmd := fmt.Sprintf(" redis-trib.rb reshard --from %v --to %v --slots %v --yes %v:6379 ", assignStrategies[i].FromReplicas, nodeId, *assignStrategies[i].Slots, existInstanceIp)
 		commandReshare := []string{"/bin/sh", "-c", reshareCmd}
 		stdout, stderr, err := rco.ExecToPodThroughAPI(commandReshare, "", existInstanceName, reference.Namespace, nil)
 
 		if err != nil || stderr != "" {
-			err := fmt.Errorf("redisCluster: %v/%v -- reshareCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n -- will update redisCluster status as Failed", reference.Namespace, reference.Name, commandReshare, stdout, stderr, err)
+			err := fmt.Errorf("redisCluster: %v/%v -- reshareCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v \n", reference.Namespace, reference.Name, commandReshare, stdout, stderr, err)
 			glog.Errorf(err.Error())
 			return err
 		}
 		glog.V(4).Infof("redisCluster: %v/%v reshareCmd: %v \n -- \nstdout: %v", reference.Namespace, reference.Name, commandReshare, stdout)
 	}
 
+	return nil
+}
+
+func (rco *RedisClusterOperator) execCheckRedisCluster (existInstanceIp, existInstanceName string, reference *v1.ObjectReference) error {
+	checkCmd := fmt.Sprintf(" redis-trib.rb check %v:6379 ", existInstanceIp)
+	commandCheck := []string{"/bin/sh", "-c", checkCmd}
+	stdout, stderr, err := rco.ExecToPodThroughAPI(commandCheck, "", existInstanceName, reference.Namespace, nil)
+
+	if err != nil || stderr != "" {
+		err := fmt.Errorf("redisCluster: %v/%v -- checkCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", reference.Namespace, reference.Name, commandCheck, stdout, stderr, err)
+		glog.Errorf(err.Error())
+		return err
+	}
+	glog.V(4).Infof("redisCluster: %v/%v checkCmd: %v \n -- \nstdout: %v", reference.Namespace, reference.Name, commandCheck, stdout)
 	return nil
 }
 
@@ -1563,26 +1635,30 @@ func (rco *RedisClusterOperator) currentRedisClusterInfo (redisCluster *redistyp
 	for _, info := range nodeInfos {
 		info.
 	}*/
-	//diffIps分组master和salve
+	//diffIps分组master和slave
 	//TODO 根据节点分组
-	var newMasterInstanceIPs, newSalveInstanceIPs []string
+	var newMasterInstanceIPs, newSlaveInstanceIPs []string
 	for i := 0; i < diffIpsLen; i++ {
 		if i < (len(diffIPs) / 2) {
 			newMasterInstanceIPs = append(newMasterInstanceIPs, diffIPs[i])
 		} else {
-			newSalveInstanceIPs = append(newSalveInstanceIPs, diffIPs[i])
+			newSlaveInstanceIPs = append(newSlaveInstanceIPs, diffIPs[i])
 		}
 	}
 
-	return existInstanceIps, existInstanceNames, existNodeIds, newSalveInstanceIPs, newMasterInstanceIPs, nil
+	return existInstanceIps, existInstanceNames, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, nil
 }
 
-//升级集群时加master和salve
+//升级集群时加master和slave
 func (rco *RedisClusterOperator) scaleRedisCluster (redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints) ([]string, []string, []string, error) {
+
+	if endpoints.Subsets == nil {
+		return nil, nil, nil, fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
+	}
 
 	//获取已有redis集群信息以及当前新起来的pod实例信息
 	addresses := endpoints.Subsets[0].Addresses
-	existInstanceIps, existInstanceNames, existNodeIds, newSalveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, addresses)
+	existInstanceIps, existInstanceNames, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, addresses)
 	if err != nil {
 		//更新状态为Running
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())
@@ -1631,8 +1707,8 @@ func (rco *RedisClusterOperator) scaleRedisCluster (redisCluster *redistype.Redi
 		return nil, nil, nil, err
 	}
 
-	//4、给新master加salve
-	err = rco.addSalveToClusterMaster(newSalveInstanceIPs, newMasterInstanceIPs, newMasterNodeIds, reference)
+	//4、给新master加slave
+	err = rco.addSlaveToClusterMaster(newSlaveInstanceIPs, newMasterInstanceIPs, newMasterNodeIds, reference)
 	if err != nil {
 		//更新状态为Running
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())

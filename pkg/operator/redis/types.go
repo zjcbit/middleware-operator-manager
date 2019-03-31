@@ -1,9 +1,9 @@
 package redis
 
 const (
-	masterFlagType string = "master"
-	salveFlagType string = "salve"
-	clusterStatusOK = "cluster_state:ok"
+	masterFlagType  string = "master"
+	slaveFlagType   string = "slave"
+	clusterStatusOK        = "cluster_state:ok"
 )
 /*
 25e8c9379c3db621da6ff8152684dc95dbe2e163 192.168.64.102:8002 master - 0 1490696025496 15 connected 5461-10922
@@ -31,7 +31,7 @@ type redisNodeInfo struct {
 	IpPort      string `json:"ipPort,omitempty"`
 	//flags：节点的角色(master,slave,myself)以及状态(pfail,fail)
 	Flags       string `json:"flags,omitempty"`
-	//salve的master id
+	//slave的master id
 	Master      string `json:"master,omitempty"`
 	//集群最近一次向节点发送ping命令之后，过了多长时间还没接到回复
 	PingSent    string `json:"pingSent,omitempty"`

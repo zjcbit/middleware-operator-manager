@@ -7,6 +7,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/remotecommand"
+	"github.com/golang/glog"
 )
 
 const debug = false
@@ -22,6 +23,8 @@ const debug = false
 
 
 func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, containerName, podName, namespace string, stdin io.Reader) (string, string, error) {
+
+	glog.V(3).Infof("exec To Pod Through API %v/%v -- %v", namespace, podName, command)
 
 	req := rco.defaultClient.CoreV1().RESTClient().Post().
 		Resource("pods").
