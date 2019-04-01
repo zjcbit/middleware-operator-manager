@@ -19,12 +19,12 @@ spec:
     assignStrategies:
        - 
         slots: 2000
-        fromReplicas: nodeId1,nodeId2
+        fromReplicas: nodeId1
        - 
         # 从nodeId3,nodeId4一共分配1000个卡槽
         slots: 1000 
         # 多个nodeId用逗号分隔
-        fromReplicas: nodeId3,nodeId4
+        fromReplicas: nodeId3
   # redis 实例配置详情
   pod:
     # 标签管理：map[string][string]

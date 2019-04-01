@@ -25,7 +25,8 @@ spec:
       containers:
       - command:
         - operator-manager
-        - -v=5
+        - --v=5
+        - --leader-elect=true
         image: 192.168.26.46/k8s-deploy/operator-manager:v1
         resources:
           limits:
