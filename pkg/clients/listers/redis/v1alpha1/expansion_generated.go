@@ -18,10 +18,48 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	"fmt"
+	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/labels"
+)
+
 // RedisClusterListerExpansion allows custom methods to be added to
 // RedisClusterLister.
-type RedisClusterListerExpansion interface{}
+type RedisClusterListerExpansion interface {
+	GetRedisClusterForStatefulSet(sts *appsv1.StatefulSet) (*v1alpha1.RedisCluster, error)
+}
 
 // RedisClusterNamespaceListerExpansion allows custom methods to be added to
 // RedisClusterNamespaceLister.
 type RedisClusterNamespaceListerExpansion interface{}
+
+// GetRedisClusterForStatefulSet returns a list of RedisClusters that potentially
+// match a StatefulSet. Only the one specified in the StatefulSet's ControllerRef
+// will actually manage it.
+// Returns an error only if no matching RedisClusters are found.
+func (rec *redisClusterLister) GetRedisClusterForStatefulSet(sts *appsv1.StatefulSet) (*v1alpha1.RedisCluster, error) {
+	if len(sts.Annotations) == 0 {
+		return nil, fmt.Errorf("no redisclusters found for StatefulSet %v because it has no Annotations", sts.Name)
+	}
+
+	// TODO: MODIFY THIS METHOD so that it checks for the podTemplateSpecHash label
+	recList, err := rec.RedisClusters(sts.Namespace).List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range recList {
+		// If a statefulSet with a redis.middleware.hc.cn=redisclusters-{redisClusterName} annotation, it should be redis work queue sync
+		if len(sts.Annotations) == 0 || sts.Annotations[v1alpha1.MiddlewareRedisTypeKey] != (v1alpha1.MiddlewareRedisClustersPrefix+r.Name) {
+			continue
+		}
+
+		if sts.Namespace == r.Namespace && sts.Name == r.Name {
+			return r, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not find redisclusters set for StatefulSet %s in namespace %s with annotation: %v", sts.Name, sts.Namespace, v1alpha1.MiddlewareRedisTypeKey)
+}

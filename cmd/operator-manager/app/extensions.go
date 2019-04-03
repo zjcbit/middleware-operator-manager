@@ -26,11 +26,10 @@ import (
 )
 
 func startRedisClusterController(otx OperatorContext) (bool, error) {
-	/*if !otx.AvailableResources[schema.GroupVersionResource{Group: "extensions", Version: "v1beta1", Resource: "deployments"}] {
-		return false, nil
-	}*/
+
 	rco, err := redis.NewRedisClusterOperator(
-		otx.InformerFactory.Cr().V1alpha1().RedisClusters(),
+		otx.RedisInformerFactory.Cr().V1alpha1().RedisClusters(),
+		otx.InformerFactory.Apps().V1().StatefulSets(),
 		otx.DefaultClientBuilder.ClientOrDie("default-kube-client"),
 		otx.OperatorClientBuilder.ClientOrDie("rediscluster-operator"),
 		otx.kubeConfig,

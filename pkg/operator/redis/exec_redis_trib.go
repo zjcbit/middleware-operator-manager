@@ -2,12 +2,12 @@ package redis
 
 import (
 	"bytes"
-		"fmt"
+	"fmt"
+	"github.com/golang/glog"
 	"io"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/remotecommand"
-	"github.com/golang/glog"
 )
 
 const debug = false
@@ -20,7 +20,6 @@ const debug = false
 // :return: string: Output of the command. (STDOUT)
 //          string: Errors. (STDERR)
 //           error: If any error has occurred otherwise `nil`
-
 
 func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, containerName, podName, namespace string, stdin io.Reader) (string, string, error) {
 
@@ -68,6 +67,7 @@ func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, container
 
 	return stdout.String(), stderr.String(), nil
 }
+
 //
 //func main() {
 //	flag.Parse()
@@ -100,7 +100,7 @@ func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, container
 //	//ok
 //	//command = []string{"/bin/sh", "-c", `redis-trib.rb  rebalance --use-empty-masters 10.168.78.119:6379`}
 //
-//	//command = []string{"/bin/sh", "-c", `echo yes | redis-trib.rb create 10.168.78.67:6379 10.168.78.124:6379 10.168.78.126:6379`}
+//	//command = []string{"/bin/sh", "-c", `echo yes | redis-trib.rb create --replicas 1 10.168.78.67:6379 10.168.78.124:6379 10.168.78.126:6379 1.1.1.1:6379 2.2..2.2:6379 3.3..33.3:6379`}
 //
 //
 //	// For now I am assuming stdin for the command to be nil

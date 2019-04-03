@@ -20,13 +20,13 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"github.com/spf13/pflag"
+	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app"
+	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app/options"
 	"k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/apiserver/pkg/util/logs"
 	"k8s.io/kubernetes/pkg/version/verflag"
-	"github.com/spf13/pflag"
-	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app/options"
-	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app"
+	"os"
 )
 
 func main() {

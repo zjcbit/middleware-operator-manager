@@ -26,10 +26,10 @@ func NewOMServer() *OperatorManagerServer {
 			Operators:                   []string{"*"},
 			LeaderElection:              config.DefaultLeaderElectionConfiguration(),
 			ConcurrentRedisClusterSyncs: 1,
-			Port:            operatorManagerPort,
-			Address:         "0.0.0.0",
-			ResyncPeriod:    60,
-			ClusterTimeOut:  6,
+			Port:           operatorManagerPort,
+			Address:        "0.0.0.0",
+			ResyncPeriod:   60,
+			ClusterTimeOut: 6,
 			//controller-manager的类型为"application/vnd.kubernetes.protobuf"但在这里有问题,导致同步事件AddFunc、UpdateFunc、delFunc出问题，
 			// 不能加,后续细细研究,用于构建kubeConfig
 			//ContentType:     "application/vnd.kubernetes.protobuf",

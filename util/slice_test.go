@@ -39,10 +39,27 @@ func TestSliceStringDiff(t *testing.T) {
 		return
 	}
 
-	for _, v := range diffslice  {
-		if v != "c" && v != "d"{
+	for _, v := range diffslice {
+		if v != "c" && v != "d" {
 			t.Error("should be contain c, d")
 			return
 		}
 	}
+}
+
+func TestAllocSlots(t *testing.T) {
+	/*	The first step is to split instances by IP. This is useful as
+		# we'll try to allocate master nodes in different physical machines
+		# (as much as possible) and to allocate slaves of a given master in
+		# different physical machines as well.
+		#
+		# This code assumes just that if the IP is different, than it is more
+		# likely that the instance is running in a different physical host
+		# or at least a different virtual machine.
+		第一步是按IP拆分实例。这很有用
+		＃我们将尝试在不同的物理机器中分配主节点＃（尽可能多）并在
+		＃不同的物理机器中分配给定主机的从机。
+		##此代码假定如果IP不同，则表示实例正在另一个物理主机
+		＃或至少一个不同的虚拟机中运行。
+	*/
 }

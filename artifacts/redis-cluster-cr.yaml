@@ -24,7 +24,7 @@ spec:
         # 从nodeId3,nodeId4一共分配1000个卡槽
         slots: 1000 
         # 多个nodeId用逗号分隔
-        fromReplicas: nodeId3
+        fromReplicas: nodeId3,nodeId4
   # redis 实例配置详情
   pod:
     # 标签管理：map[string][string]
@@ -97,7 +97,7 @@ status:
     masterNodeId: allkk111snknkcs
     nodeId: allkk111snknkcs
     domainName: redis-cluster-0.redis-cluster.kube-system.svc.cluster.local
-    slots: 1024
+    slots: 1024-2048
     hostname: docker-vm-3
     hostIP: 192.168.26.122
     # true or flase 

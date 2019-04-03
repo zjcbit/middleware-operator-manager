@@ -24,6 +24,11 @@ import (
 
 // RedisClusterUpdateStrategyType is a string enumeration type that enumerates
 // all possible update strategies for the RedisCluster.
+const (
+	MiddlewareRedisTypeKey        = "redis.middleware.hc.cn"
+	MiddlewareRedisClustersPrefix = "redisclusters-"
+)
+
 type RedisClusterUpdateStrategyType string
 
 const (
@@ -190,7 +195,7 @@ type RedisClusterCondition struct {
 
 	DomainName string `json:"domainName,omitempty" protobuf:"bytes,4,opt,name=domainName"`
 
-	Slots    string  `json:"slots,omitempty" protobuf:"bytes,4,opt,name=slots"`
+	Slots    string `json:"slots,omitempty" protobuf:"bytes,4,opt,name=slots"`
 	Hostname string `json:"hostname,omitempty" protobuf:"bytes,4,opt,name=hostname"`
 	HostIP   string `json:"hostIP,omitempty" protobuf:"bytes,4,opt,name=hostIP"`
 	// Status of the condition, one of True, False, Unknown.

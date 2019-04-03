@@ -28,6 +28,7 @@ import (
 	"os"
 	"strconv"
 
+	"harmonycloud.cn/middleware-operator-manager/util/configz"
 	"k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -36,7 +37,6 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
-	"harmonycloud.cn/middleware-operator-manager/util/configz"
 	"k8s.io/kubernetes/pkg/version"
 
 	"fmt"
@@ -51,6 +51,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/controller"
 	"time"
@@ -100,10 +101,13 @@ func Run(s *options.OperatorManagerServer) error {
 			glog.Fatalf("error building controller context: %v", err)
 		}
 
+		otx.InformerFactory = informers.NewSharedInformerFactory(kubeClient, time.Duration(s.ResyncPeriod)*time.Second)
+
 		if err := StartOperators(otx, NewOperatorInitializers()); err != nil {
 			glog.Fatalf("error starting operators: %v", err)
 		}
 
+		otx.RedisInformerFactory.Start(otx.Stop)
 		otx.InformerFactory.Start(otx.Stop)
 		close(otx.InformersStarted)
 
@@ -185,10 +189,10 @@ func CreateOperatorContext(s *options.OperatorManagerServer, kubeConfig *restcli
 	}*/
 
 	otx := OperatorContext{
-		kubeConfig: kubeConfig,
+		kubeConfig:            kubeConfig,
 		OperatorClientBuilder: operatorClientBuilder,
 		DefaultClientBuilder:  rootClientBuilder,
-		InformerFactory:       sharedInformers,
+		RedisInformerFactory:  sharedInformers,
 		Options:               *s,
 		//AvailableResources: availableResources,
 		Stop:             stop,
@@ -311,8 +315,11 @@ type OperatorContext struct {
 	// ClientBuilder will provide a default client for this operator to use
 	DefaultClientBuilder controller.ControllerClientBuilder
 
+	// RedisInformerFactory gives access to informers for the operator.
+	RedisInformerFactory redisInformerFactory.SharedInformerFactory
+
 	// InformerFactory gives access to informers for the operator.
-	InformerFactory redisInformerFactory.SharedInformerFactory
+	InformerFactory informers.SharedInformerFactory
 
 	// Options provides access to init options for a given operator
 	Options options.OperatorManagerServer
@@ -374,7 +381,7 @@ func NewOperatorInitializers() map[string]InitFunc {
 }
 
 func CreateRedisClusterCRD(extensionCRClient *extensionsclient.Clientset) error {
-	//TODO add CustomResourceValidation due to guarantee redis operator work normally
+	//TODO add CustomResourceValidation due to guarantee redis operator work normally,k8s1.12
 	crd := &v1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "redisclusters." + v1alpha1.SchemeGroupVersion.Group,
@@ -391,7 +398,7 @@ func CreateRedisClusterCRD(extensionCRClient *extensionsclient.Clientset) error 
 				ShortNames: []string{"rec"},
 			},
 			/*Validation: &v1beta1.CustomResourceValidation {
-				
+
 			},*/
 		},
 	}
