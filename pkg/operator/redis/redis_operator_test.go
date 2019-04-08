@@ -226,3 +226,60 @@ func TestDeferErr(t *testing.T) {
 	}()
 	err = errors.New("222")
 }
+
+
+func TestCreateAssignMasterSlaveIP (t *testing.T) {
+	rco := &RedisClusterOperator{
+	}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.102.77-slave"
+	c := "10.10.102.77-slave"
+	d := "10.10.103.155-build"
+	e := "10.10.103.155-build"
+	f := "10.10.103.152-slave"
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &d,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &e,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &f,
+					},
+				},
+			},
+		},
+	}
+
+	for i:= 0; i < 10; i++ {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
