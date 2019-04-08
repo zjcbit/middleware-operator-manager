@@ -27,13 +27,13 @@ import (
 
 // RedisClusterListerExpansion allows custom methods to be added to
 // RedisClusterLister.
-type RedisClusterListerExpansion interface {
+type RedisClusterListerExpansion interface{
 	GetRedisClusterForStatefulSet(sts *appsv1.StatefulSet) (*v1alpha1.RedisCluster, error)
 }
 
 // RedisClusterNamespaceListerExpansion allows custom methods to be added to
 // RedisClusterNamespaceLister.
-type RedisClusterNamespaceListerExpansion interface{}
+type RedisClusterNamespaceListerExpansion interface {}
 
 // GetRedisClusterForStatefulSet returns a list of RedisClusters that potentially
 // match a StatefulSet. Only the one specified in the StatefulSet's ControllerRef

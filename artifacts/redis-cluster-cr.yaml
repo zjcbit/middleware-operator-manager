@@ -7,7 +7,9 @@ spec:
   # 代表redis集群的个数
   replicas: 7
   # 代表是否进入维修状态
-  pause: true 
+  pause: true
+  # 是否删除crd以及redis集群
+  finalizers: foreground
   # 镜像地址
   repository: library/redis
   # 镜像版本，便于后续多版本特化支持
@@ -16,6 +18,7 @@ spec:
   updateStrategy:
     # 升级类型为AutoReceive（自动分配,不用AssignStrategies）, AssignReceive（指定值分配，需要用AssignStrategies）
     type: AssignReceive
+    pipeline: "100"
     assignStrategies:
        - 
         slots: 2000
@@ -92,7 +95,7 @@ status:
   reason: "异常问题"
   conditions:
   - name: redis-cluster-0
-    instanceIP: 10.168.78.90
+    instance: 10.168.78.90:6379
     type: master
     masterNodeId: allkk111snknkcs
     nodeId: allkk111snknkcs

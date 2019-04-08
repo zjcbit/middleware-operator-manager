@@ -59,6 +59,8 @@ const (
 	RedisClusterFailed RedisClusterPhase = "Failed"
 	// RedisClusterScaling means the RedisCluster is Scaling
 	RedisClusterScaling RedisClusterPhase = "Scaling"
+	// RedisClusterDeleting means the RedisCluster is Deleting
+	RedisClusterDeleting RedisClusterPhase = "Deleting"
 )
 
 // 为当前类型生成客户端
@@ -103,6 +105,7 @@ type RedisClusterSpec struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	Pause          bool                          `json:"pause,omitempty"`
+	Finalizers     string                        `json:"finalizers,omitempty"`
 	Repository     string                        `json:"repository,omitempty"`
 	Version        string                        `json:"version,omitempty"`
 	UpdateStrategy RedisClusterUpdateStrategy    `json:"updateStrategy,omitempty"`
@@ -111,6 +114,7 @@ type RedisClusterSpec struct {
 
 type RedisClusterUpdateStrategy struct {
 	Type             RedisClusterUpdateStrategyType `json:"type,omitempty"`
+	Pipeline         string                         `json:"pipeline,omitempty"`
 	AssignStrategies []SlotsAssignStrategy          `json:"assignStrategies,omitempty"`
 }
 
@@ -186,8 +190,8 @@ type RedisClusterStatus struct {
 type RedisClusterCondition struct {
 	Name string `json:"name,omitempty" protobuf:"bytes,4,opt,name=name"`
 	// Type of RedisCluster condition.
-	Type       RedisClusterConditionType `json:"type"`
-	InstanceIP string                    `json:"instanceIP,omitempty" protobuf:"bytes,4,opt,name=instanceIP"`
+	Type     RedisClusterConditionType `json:"type"`
+	Instance string                    `json:"instance,omitempty" protobuf:"bytes,4,opt,name=instance"`
 
 	NodeId string `json:"nodeId,omitempty" protobuf:"bytes,4,opt,name=nodeId"`
 

@@ -31,7 +31,6 @@ import (
 	redisclusterLister "harmonycloud.cn/middleware-operator-manager/pkg/clients/listers/redis/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -48,6 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/controller"
 	"reflect"
 	"time"
+	"strings"
 )
 
 const (
@@ -60,10 +60,20 @@ const (
 	redisServicePort6379  = 6379
 	redisServicePort16379 = 16379
 	pauseKey              = "pause.middleware.harmonycloud.cn"
+	defaultPipeline              = "10"
+	finalizersForeGround = "Foreground"
+)
+
+type handleClusterType int
+
+const (
+	createCluster handleClusterType = iota
+	upgradeCluster
+	dropCluster
 )
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
-var controllerKind = extensions.SchemeGroupVersion.WithKind("RedisCluster")
+var controllerKind = redistype.SchemeGroupVersion.WithKind("RedisCluster")
 
 // RedisClusterOperator is responsible for synchronizing RedisCluster objects stored
 // in the system with actual running replica sets and pods.
@@ -420,15 +430,12 @@ func (rco *RedisClusterOperator) syncRedisCluster(key string) (err error) {
 		}
 	}()
 
-	err = rco.createOrUpgradeCluster(namespace, name)
-	if err != nil {
-		return err
-	}
+	err = rco.sync(namespace, name)
 
-	return nil
+	return err
 }
 
-func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) error {
+func (rco *RedisClusterOperator) sync(namespace, name string) error {
 
 	rc, err := rco.redisClusterLister.RedisClusters(namespace).Get(name)
 
@@ -464,7 +471,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 	//5.1 升级成功后,更新redisCluster对象中的status
 
 	//6、启动一个协程一直探测集群的健康状态,实时更新到redisCluster对象的status中
-	isInit := false
+	var handleFlag handleClusterType
 	existSts, err := rco.getStatefulSetForRedisCluster(redisCluster)
 
 	if err != nil {
@@ -472,22 +479,26 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		return err
 	} else if existSts == nil {
 		glog.V(2).Infof("RedisCluster %v/%v has been create firstly, will create and init redis cluster", namespace, name)
-		isInit = true
+		handleFlag = createCluster
 	} else {
-		//可能是升级操作也可能是强制同步;升级操作：实例和当前sts实例不一样
+		//删除集群
+		if strings.EqualFold(redisCluster.Spec.Finalizers, string(v1.DeletePropagationForeground)) {
+			//删除集群观云台做
+			handleFlag = dropCluster
+		} else if *redisCluster.Spec.Replicas <= *existSts.Spec.Replicas {
+			//可能是升级操作也可能是强制同步;升级操作：实例和当前sts实例不一样
 
-		//redisCluster里实例数小于当前sts实例数,只检查状态不进行缩容,TODO 缩容需求
-		if *redisCluster.Spec.Replicas <= *existSts.Spec.Replicas {
+			//redisCluster里实例数小于当前sts实例数,只检查状态不进行缩容,TODO 缩容需求
 			return rco.checkAndUpdateRedisClusterStatus(redisCluster)
 		} else {
 			//redisCluster实例数大于当前sts实例数,则为扩容
-			isInit = false
+			handleFlag = upgradeCluster
 		}
 	}
 
+	switch handleFlag {
 	//初始化集群
-	if isInit {
-
+	case createCluster:
 		//更新状态为Creating
 		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterCreating, "")
 		if err != nil {
@@ -495,7 +506,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//create service
-		recService := rco.buildRedisClusterService(namespace, name)
+		recService := rco.buildRedisClusterService(newRedisCluster, namespace, name)
 		_, err = rco.defaultClient.CoreV1().Services(namespace).Create(recService)
 
 		if errors.IsAlreadyExists(err) {
@@ -513,9 +524,9 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//检测endpoint pod都ready,则创建和初始化集群
-		rco.createAndInitRedisCluster(newRedisCluster)
-	} else {
-
+		err = rco.createAndInitRedisCluster(newRedisCluster)
+	//升级集群
+	case upgradeCluster:
 		//卡槽分配策略手动,但分配详情有误
 		strategiesLen := int32(len(redisCluster.Spec.UpdateStrategy.AssignStrategies))
 		scaleLen := *redisCluster.Spec.Replicas - *existSts.Spec.Replicas
@@ -527,7 +538,7 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//更新状态为Scaling
-		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterScaling, "")
+		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterDeleting, "")
 		if err != nil {
 			return err
 		}
@@ -542,8 +553,18 @@ func (rco *RedisClusterOperator) createOrUpgradeCluster(namespace, name string) 
 		}
 
 		//检测endpoint pod都ready,则升级扩容集群
-		rco.upgradeRedisCluster(newRedisCluster)
+		err = rco.upgradeRedisCluster(newRedisCluster)
+	//删除集群
+	case dropCluster:
+		//更新状态为Deleting
+		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterDeleting, "")
+		if err != nil {
+			return err
+		}
+		err = rco.dropRedisCluster(newRedisCluster)
+	default:
+		glog.Error("RedisCluster crd Error.")
 	}
 
-	return nil
+	return err
 }

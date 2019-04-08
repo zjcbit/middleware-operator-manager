@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
+	)
 
 //检查集群状态
 //redisCluster：redisCluster对象
@@ -40,7 +40,11 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 	}
 
 	if !clusterStatusIsOK {
-		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, "cluster state fail")
+		abnormalReason := "cluster state failed"
+		if redisCluster.Status.Reason != "" {
+			abnormalReason = redisCluster.Status.Reason
+		}
+		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, abnormalReason)
 		return nil
 	}
 
@@ -135,7 +139,7 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 	/*var existInstanceIps, existNodeIds, existInstanceNames []string
 	clusterConditions := redisCluster.Status.Conditions
 	for _, info := range clusterConditions {
-		existInstanceIps = append(existInstanceIps, info.InstanceIP)
+		existInstanceIps = append(existInstanceIps, info.Instance)
 		existNodeIds = append(existNodeIds, info.NodeId)
 		existInstanceNames = append(existInstanceNames, info.Name)
 	}
@@ -252,7 +256,7 @@ func (rco *RedisClusterOperator) autoAssignSlotToRedisCluster(endpoints *v1.Endp
 	reference := endpoints.Subsets[0].Addresses[0].TargetRef
 
 	//执行rebalance命令,将16384个卡槽平均分配到新master节点
-	err = rco.rebalanceRedisClusterSlotsToMasterNode(existInstanceIps[0], reference.Name, reference.Namespace)
+	err = rco.rebalanceRedisClusterSlotsToMasterNode(existInstanceIps[0], reference.Name, reference.Namespace, redisCluster.Spec.UpdateStrategy.Pipeline)
 	if err != nil {
 		//更新状态为Running
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())
@@ -298,7 +302,7 @@ func (rco *RedisClusterOperator) manualAssignSlotToRedisCluster(endpoints *v1.En
 	reference := endpoints.Subsets[0].Addresses[0].TargetRef
 
 	//执行reshare命令,将指定nodeId个卡槽分配到新master节点
-	err = rco.reshareRedisClusterSlotsToMasterNode(redisCluster.Spec.UpdateStrategy.AssignStrategies, existInstanceIps[0], reference.Name, reference.Namespace, newMasterNodeIds)
+	err = rco.reshareRedisClusterSlotsToMasterNode(redisCluster.Spec.UpdateStrategy, existInstanceIps[0], reference.Name, reference.Namespace, newMasterNodeIds)
 	if err != nil {
 		//更新状态为Running
 		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())
@@ -350,7 +354,7 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(redisCluster *redisty
 
 		}*/
 	//TODO 主从节点选择
-	var masterInstanceIps, slaveInstanceIps []string
+	/*var masterInstanceIps, slaveInstanceIps []string
 	count := len(endpoints.Subsets[0].Addresses)
 	for i, addr := range endpoints.Subsets[0].Addresses {
 		if i < (count / 2) {
@@ -358,6 +362,13 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(redisCluster *redisty
 		} else {
 			slaveInstanceIps = append(slaveInstanceIps, addr.IP)
 		}
+	}*/
+
+	masterInstanceIps, slaveInstanceIps, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	if err != nil {
+		//更新状态为Failed
+		rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterFailed, err.Error())
+		return err
 	}
 
 	//endpoint里pod信息
@@ -586,6 +597,8 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			Conditions: clusterConditions,
 		}
 
+		//TODO 判断新旧clusterConditions是否变化(除LastTransitionTime字段),变化才更新状态,避免更新频繁(其实只是LastTransitionTime变化了)
+
 		//代表着实例不一致(用户修改实例，operator发现实例不一致，更新statefulset，更新状态)
 	case redistype.RedisClusterScaling:
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
@@ -623,6 +636,18 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 		}
 		redisCluster.Status.Replicas = *sts.Spec.Replicas
 		redisCluster.Status.Phase = redistype.RedisClusterFailed
+		redisCluster.Status.Reason = abnormalReason
+		//代表着某异常故障
+	case redistype.RedisClusterDeleting:
+		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
+
+		if err != nil {
+			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
+			glog.Errorf(err.Error())
+			return redisCluster, err
+		}
+		redisCluster.Status.Replicas = *sts.Spec.Replicas
+		redisCluster.Status.Phase = redistype.RedisClusterDeleting
 		redisCluster.Status.Reason = abnormalReason
 	}
 
@@ -690,7 +715,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatusConditions(redisCluster 
 
 		condition := redistype.RedisClusterCondition{}
 		condition.NodeId = info.NodeId
-		condition.InstanceIP = strings.Split(info.IpPort, ":")[0]
+		condition.Instance = info.IpPort
 		condition.Status = v1.ConditionTrue
 		if masterFlagType == info.Flags {
 			condition.Type = redistype.MasterConditionType
@@ -704,9 +729,9 @@ func (rco *RedisClusterOperator) buildRedisClusterStatusConditions(redisCluster 
 
 		condition.MasterNodeId = info.Master
 
-		instanceInfo := instanceInfoMap[condition.InstanceIP]
+		instanceInfo := instanceInfoMap[condition.Instance]
 		condition.Name = instanceInfo.HostName
-		condition.Hostname = instanceInfo.HostName
+		condition.Hostname = instanceInfo.NodeName
 		condition.DomainName = instanceInfo.DomainName
 		condition.HostIP = instanceInfo.HostIP
 		condition.Reason = ""
@@ -723,7 +748,8 @@ func (rco *RedisClusterOperator) buildRedisClusterStatusConditions(redisCluster 
 //构造Service
 //namespace：service所在ns
 //name：service name
-func (rco *RedisClusterOperator) buildRedisClusterService(namespace, name string) *v1.Service {
+func (rco *RedisClusterOperator) buildRedisClusterService(redisCluster *redistype.RedisCluster, namespace, name string) *v1.Service {
+	flagTrue := true
 	//build service
 	return &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -734,6 +760,16 @@ func (rco *RedisClusterOperator) buildRedisClusterService(namespace, name string
 			},
 			Labels: map[string]string{
 				"app": name,
+			},
+			OwnerReferences: []metav1.OwnerReference {
+				{
+					APIVersion: controllerKind.Group + "/" + controllerKind.Version,
+					Kind: controllerKind.Kind,
+					Name: name,
+					UID: redisCluster.UID,
+					BlockOwnerDeletion: &flagTrue,
+					Controller: &flagTrue,
+				},
 			},
 		},
 		Spec: v1.ServiceSpec{
@@ -797,7 +833,9 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 		}
 	}
 
+	glog.Warningf("-----------redisCluster: %#v--", redisCluster)
 	containerEnv = append(containerEnv, redisCluster.Spec.Pod[0].Env...)
+	flagTrue := true
 	recSts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -809,6 +847,16 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 			},
 			Labels: map[string]string{
 				"app": name,
+			},
+			OwnerReferences: []metav1.OwnerReference {
+				{
+					APIVersion: controllerKind.Group + "/" + controllerKind.Version,
+					Kind: controllerKind.Kind,
+					Name: redisCluster.Name,
+					UID: redisCluster.UID,
+					BlockOwnerDeletion: &flagTrue,
+					Controller: &flagTrue,
+				},
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
@@ -916,9 +964,9 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 					},
 					RestartPolicy: v1.RestartPolicyAlways,
 					//TODO modify
-					NodeSelector: map[string]string{
-						"kubernetes.io/hostname": "ly1f-yanfa-20180607-docker-vm-3.novalocal",
-					},
+					/*NodeSelector: map[string]string{
+						"kubernetes.io/hostname": "10.10.103.61-slave",
+					},*/
 					Volumes: []v1.Volume{
 						{
 							Name: "redis-config",
@@ -1050,7 +1098,7 @@ func (rco *RedisClusterOperator) addMasterNodeToRedisCluster(newMasterInstanceIP
 //existInstanceIp：redis集群中的一个实例IP
 //podName：pod实例中的一个podName,不一定已经加入redis集群
 //namespace：redis集群所在的ns
-func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode(existInstanceIp, podName, namespace string) error {
+func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode(existInstanceIp, podName, namespace, crdPipeline string) error {
 
 	//将阻塞-->>检查集群状态是否ok
 	err := rco.waitRedisStatusOK(existInstanceIp, podName, namespace)
@@ -1058,7 +1106,12 @@ func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode(existIns
 		return err
 	}
 
-	rebalanceCmd := fmt.Sprintf(" redis-trib.rb  rebalance --use-empty-masters %v:6379 ", existInstanceIp)
+	pipeline := defaultPipeline
+	if crdPipeline != "" {
+		pipeline = crdPipeline
+	}
+
+	rebalanceCmd := fmt.Sprintf(" redis-trib.rb  rebalance --use-empty-masters --pipeline %v %v:6379 ", pipeline, existInstanceIp)
 	commandRebalance := []string{"/bin/sh", "-c", rebalanceCmd}
 	stdout, stderr, err := rco.ExecToPodThroughAPI(commandRebalance, "", podName, namespace, nil)
 
@@ -1078,7 +1131,14 @@ func (rco *RedisClusterOperator) rebalanceRedisClusterSlotsToMasterNode(existIns
 //assignStrategies：reshare卡槽分配策略
 //podName：pod实例中的一个podName,不一定已经加入redis集群
 //namespace：redis集群所在的ns
-func (rco *RedisClusterOperator) reshareRedisClusterSlotsToMasterNode(assignStrategies []redistype.SlotsAssignStrategy, existInstanceIp, podName, namespace string, newMasterNodeIds []string) error {
+func (rco *RedisClusterOperator) reshareRedisClusterSlotsToMasterNode(assignStrategies redistype.RedisClusterUpdateStrategy, existInstanceIp, podName, namespace string, newMasterNodeIds []string) error {
+
+	strategies := assignStrategies.AssignStrategies
+	crdPipeline := assignStrategies.Pipeline
+	pipeline := defaultPipeline
+	if crdPipeline != "" {
+		pipeline = crdPipeline
+	}
 
 	for i, nodeId := range newMasterNodeIds {
 
@@ -1088,7 +1148,7 @@ func (rco *RedisClusterOperator) reshareRedisClusterSlotsToMasterNode(assignStra
 			return err
 		}
 
-		reshareCmd := fmt.Sprintf(" redis-trib.rb reshard --from %v --to %v --slots %v --yes %v:6379 ", assignStrategies[i].FromReplicas, nodeId, *assignStrategies[i].Slots, existInstanceIp)
+		reshareCmd := fmt.Sprintf(" redis-trib.rb reshard --from %v --to %v --slots %v --pipeline %v --yes %v:6379 ", strategies[i].FromReplicas, nodeId, *strategies[i].Slots, pipeline, existInstanceIp)
 		commandReshare := []string{"/bin/sh", "-c", reshareCmd}
 		stdout, stderr, err := rco.ExecToPodThroughAPI(commandReshare, "", podName, namespace, nil)
 
@@ -1152,19 +1212,20 @@ func (rco *RedisClusterOperator) execCheckRedisCluster(existInstanceIp, podName,
 }
 
 //获取当前redisCluster实例信息,和新加的节点master和slave信息
-//addresses：扩实例之后的endpoint里address信息
+//endpoints：扩实例之后的endpoint信息
 //redisCluster：redisCluster对象
 //oldEndpoints：扩实例之前的endpoint信息
-func (rco *RedisClusterOperator) currentRedisClusterInfo(redisCluster *redistype.RedisCluster, addresses []v1.EndpointAddress, oldEndpoints *v1.Endpoints) ([]string, []string, []string, []string, error) {
+func (rco *RedisClusterOperator) currentRedisClusterInfo(redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints, oldEndpoints *v1.Endpoints) ([]string, []string, []string, []string, error) {
 	//升级之前的集群IP列表和nodeId列表
 	var existInstanceIps, existNodeIds []string
 	/*	clusterConditions := redisCluster.Status.Conditions
 		for _, info := range clusterConditions {
-			existInstanceIps = append(existInstanceIps, info.InstanceIP)
+			existInstanceIps = append(existInstanceIps, info.Instance)
 			existNodeIds = append(existNodeIds, info.NodeId)
 			existInstanceNames = append(existInstanceNames, info.Name)
 		}*/
 	oldAddresses := oldEndpoints.Subsets[0].Addresses
+	addresses := endpoints.Subsets[0].Addresses
 	if len(addresses) == 0 || len(oldAddresses) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("endpoints.Subsets.addresses is empty, maybe statefulset %v/%v all replicas not ready", redisCluster.Namespace, redisCluster.Name)
 	}
@@ -1191,7 +1252,7 @@ func (rco *RedisClusterOperator) currentRedisClusterInfo(redisCluster *redistype
 	}
 
 	//升级之后endpoint列表
-	var newInstanceIps []string
+/*	var newInstanceIps []string
 	for _, newAddr := range addresses {
 		newInstanceIps = append(newInstanceIps, newAddr.IP)
 	}
@@ -1203,7 +1264,7 @@ func (rco *RedisClusterOperator) currentRedisClusterInfo(redisCluster *redistype
 		err := fmt.Errorf("current redis cluster: %v/%v status is error", redisCluster.Namespace, redisCluster.Name)
 		glog.Errorf(err.Error())
 		return nil, nil, nil, nil, err
-	}
+	}*/
 
 	//TODO 新加入的IP,主从规划
 
@@ -1221,13 +1282,17 @@ func (rco *RedisClusterOperator) currentRedisClusterInfo(redisCluster *redistype
 	}*/
 	//diffIps分组master和slave
 	//TODO 根据节点分组
-	var newMasterInstanceIPs, newSlaveInstanceIPs []string
+/*	var newMasterInstanceIPs, newSlaveInstanceIPs []string
 	for i := 0; i < diffIpsLen; i++ {
 		if i < (len(diffIPs) / 2) {
 			newMasterInstanceIPs = append(newMasterInstanceIPs, diffIPs[i])
 		} else {
 			newSlaveInstanceIPs = append(newSlaveInstanceIPs, diffIPs[i])
 		}
+	}*/
+	newMasterInstanceIPs, newSlaveInstanceIPs, err := rco.assignMasterSlaveIP(redisCluster, endpoints, oldEndpoints)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	return existInstanceIps, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, nil
@@ -1245,7 +1310,7 @@ func (rco *RedisClusterOperator) scaleRedisCluster(redisCluster *redistype.Redis
 
 	//获取已有redis集群信息以及当前新起来的pod实例信息
 	addresses := endpoints.Subsets[0].Addresses
-	existInstanceIps, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, addresses, oldEndpoints)
+	existInstanceIps, existNodeIds, newSlaveInstanceIPs, newMasterInstanceIPs, err := rco.currentRedisClusterInfo(redisCluster, endpoints, oldEndpoints)
 	if err != nil {
 		//更新状态为Running
 		//rco.updateRedisClusterStatus(redisCluster, endpoints, redistype.RedisClusterRunning, err.Error())
@@ -1302,3 +1367,162 @@ func (rco *RedisClusterOperator) scaleRedisCluster(redisCluster *redistype.Redis
 
 	return existInstanceIps, newMasterNodeIds, nil
 }
+
+//级联删除statefulset、service、cr
+//redisCluster：redisCluster对象
+func (rco *RedisClusterOperator) dropRedisCluster(redisCluster *redistype.RedisCluster) error {
+	foreGround := metav1.DeletePropagationForeground
+	options := &metav1.DeleteOptions {
+		PropagationPolicy: &foreGround,
+	}
+	//删除cr级联删除statefulset、service
+	err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Delete(redisCluster.Name, options)
+
+	if err != nil {
+		glog.Errorf("Drop RedisCluster: %v/%v error: %v", redisCluster.Namespace, redisCluster.Name, err)
+		return err
+	}
+
+	return err
+}
+
+//分配master和slave ip,符合:1、两个主节点尽可能不在同一节点上;2、master和对应salve尽可能不在同一宿主机上
+//endpoints：扩实例之后的endpoint信息
+//redisCluster：redisCluster对象
+//oldEndpoints：扩实例之前的endpoint信息
+func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints, oldEndpoints *v1.Endpoints) ([]string, []string, error) {
+	subset := endpoints.Subsets
+	if len(subset) == 0 || len(subset[0].Addresses) == 0 {
+		return nil, nil, fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
+	}
+
+	//old endpoints为nil时表示为创建时分配;否则为升级时分配
+	var addresses []v1.EndpointAddress
+	if oldEndpoints == nil {
+		addresses = subset[0].Addresses
+	} else {
+		oldSubset := oldEndpoints.Subsets
+		if len(oldSubset) == 0 || len(oldSubset[0].Addresses) == 0 {
+			glog.Warningf("RedisCluster: %v/%v, oldEndpoints.Subsets is nil", redisCluster.Namespace, redisCluster.Name)
+			addresses = subset[0].Addresses
+		} else {
+			for _, new := range subset[0].Addresses {
+				for i, old := range oldSubset[0].Addresses {
+					if new.IP == old.IP {
+						break
+					}
+					if len(oldSubset[0].Addresses) - 1 == i {
+						// 说明new是升级时新实例的addr
+						addresses = append(addresses, new)
+					}
+				}
+			}
+		}
+	}
+
+
+	//key: nodeName value: ips
+	nodeIPs := make(map[string] []v1.EndpointAddress)
+	for _, addr := range addresses {
+		nodeIPs[*addr.NodeName] = append(nodeIPs[*addr.NodeName], addr)
+	}
+
+	// slave replicas count
+	replicas := 1
+	// all master and slave count
+	nodesCount := len(addresses)
+	// master count
+	mastersCount := nodesCount / (replicas + 1)
+
+	// Select master instances
+	var interleaved []v1.EndpointAddress
+	isLoop := true
+	for isLoop {
+		// take one ip from each node until we run out of addr
+		// across every node.
+		for nodeName, addr := range nodeIPs {
+			if len(addr) == 0 {
+				if len(interleaved) == nodesCount {
+					isLoop = false
+					continue
+				}
+			} else {
+				interleaved = append(interleaved, addr[0])
+				nodeIPs[nodeName] = addr[1:]
+			}
+		}
+	}
+
+	masters := interleaved[0:mastersCount]
+
+	// master ips
+	var masterInstanceIPs []string
+	for _, addr := range masters {
+		masterInstanceIPs = append(masterInstanceIPs, addr.IP)
+	}
+
+	// Remaining nodes Count
+	nodesCount -= len(masters)
+
+	// Remaining
+	interleaved = interleaved[mastersCount:]
+
+	// slave ips
+	var slaveInstanceIPs []string
+
+	// print assign info when the method end
+	//defer glog.V(4).Infof("masterInstanceIPs: %v\nslaveInstanceIPs: %v", masterInstanceIPs, slaveInstanceIPs)
+	//这里要用闭包方式打印日志,否则slaveInstanceIPs是空slice
+	// ref:https://www.kancloud.cn/liupengjie/go/576456
+	defer func() {
+		glog.V(4).Infof("masterInstanceIPs: %v\nslaveInstanceIPs: %v", masterInstanceIPs, slaveInstanceIPs)
+	}()
+
+	for _, master := range masters {
+		assignedReplicas := 0
+		for assignedReplicas < replicas {
+
+			// 0 indicate assign finished
+			if nodesCount == 0 {
+				return masterInstanceIPs, slaveInstanceIPs, nil
+			}
+
+			// Return the first node not matching our current master
+			var instanceIP string
+			removeIndex := 0
+
+			// find slave and master node don't match
+			for i, addr := range interleaved {
+				if master.NodeName != addr.NodeName {
+					instanceIP = addr.IP
+					removeIndex = i
+					break
+				}
+			}
+
+			// If we found a IP, use it as a best-first match.
+			// Otherwise, we didn't find a IP on a different node, so we
+			// go ahead and use a same-node replica.
+			if instanceIP != "" {
+				slaveInstanceIPs = append(slaveInstanceIPs, instanceIP)
+			} else {
+				slaveInstanceIPs = append(slaveInstanceIPs, interleaved[0].IP)
+				removeIndex = 0
+			}
+
+			//remove assigned addr
+			interleaved = append(interleaved[:removeIndex], interleaved[removeIndex + 1:]...)
+
+			// nodesCount dec
+			nodesCount -= 1
+
+			// assignedReplicas inc
+			assignedReplicas += 1
+		}
+	}
+
+	return masterInstanceIPs, slaveInstanceIPs, nil
+}
+
+//TODO 异常场景下的处理，包括： 1、升级时redis集群异常中断、2、正在创建升级时redisCluster挂掉后恢复；3、pod在指定时间内没起来，创建或者升级超时，后来起来了，怎么继续创建或升级
+//TODO master和slave的IP划分

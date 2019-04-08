@@ -29,7 +29,7 @@ func NewOMServer() *OperatorManagerServer {
 			Port:           operatorManagerPort,
 			Address:        "0.0.0.0",
 			ResyncPeriod:   60,
-			ClusterTimeOut: 6,
+			ClusterTimeOut: 20,
 			//controller-manager的类型为"application/vnd.kubernetes.protobuf"但在这里有问题,导致同步事件AddFunc、UpdateFunc、delFunc出问题，
 			// 不能加,后续细细研究,用于构建kubeConfig
 			//ContentType:     "application/vnd.kubernetes.protobuf",
@@ -48,7 +48,7 @@ func (s *OperatorManagerServer) AddFlags(fs *pflag.FlagSet, allOperators []strin
 	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig)")
 	fs.StringVar(&s.Kubeconfig, "kubeconfig", s.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
 	fs.Int64Var(&s.ResyncPeriod, "resync-period", 60, "resync frequency in seconds")
-	fs.Int32Var(&s.ClusterTimeOut, "clusterTimeOut", 6, "cluster create or upgrade timeout in minutes")
+	fs.Int32Var(&s.ClusterTimeOut, "clusterTimeOut", 20, "cluster create or upgrade timeout in minutes")
 	fs.Int32Var(&s.Port, "port", 10880, "resync frequency in seconds")
 	fs.DurationVar(&s.ControllerStartInterval.Duration, "operator-start-interval", s.ControllerStartInterval.Duration, "Interval between starting operator managers.")
 	config.BindFlags(&s.LeaderElection, fs)

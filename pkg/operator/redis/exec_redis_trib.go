@@ -96,9 +96,9 @@ func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, container
 //	//ok
 //	//command = []string{"/bin/sh", "-c", `redis-trib.rb reshard --from all --to c49a3b06ad93638037d56855ff702787ad16e3ea --slots 100 --yes 10.168.78.119:6379`}
 //	//ok
-//	//command = []string{"/bin/sh", "-c", `redis-trib.rb reshard --from c49a3b06ad93638037d56855ff702787ad16e3ea --to 174ad1122349c33c475dcbd54489ea847ad8474f --slots 100 --yes 10.168.78.119:6379`}
+//	//command = []string{"/bin/sh", "-c", `redis-trib.rb reshard --from c49a3b06ad93638037d56855ff702787ad16e3ea --to 174ad1122349c33c475dcbd54489ea847ad8474f --slots 100 --pipeline 100 --yes 10.168.78.119:6379`}
 //	//ok
-//	//command = []string{"/bin/sh", "-c", `redis-trib.rb  rebalance --use-empty-masters 10.168.78.119:6379`}
+//	//command = []string{"/bin/sh", "-c", `redis-trib.rb  rebalance --use-empty-masters --pipeline 100 10.168.78.119:6379`}
 //
 //	//command = []string{"/bin/sh", "-c", `echo yes | redis-trib.rb create --replicas 1 10.168.78.67:6379 10.168.78.124:6379 10.168.78.126:6379 1.1.1.1:6379 2.2..2.2:6379 3.3..33.3:6379`}
 //
