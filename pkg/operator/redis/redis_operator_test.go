@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
+	"harmonycloud.cn/middleware-operator-manager/util"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sort"
@@ -996,4 +997,81 @@ func TestLoopMap(t *testing.T) {
 	for _, k := range sortedKeys {
 		fmt.Printf("k=%v, v=%v\n", k, m[k])
 	}
+}
+
+func TestDeepEqualExcludeFiled(t *testing.T) {
+
+	tempStatus1 := v1alpha1.RedisClusterStatus{
+		Conditions: []v1alpha1.RedisClusterCondition{
+			{
+				DomainName:         "redis-cluster-0.redis-cluster.kube-system.svc.cluster.local",
+				HostIP:             "192.168.26.122",
+				Hostname:           "docker-vm-3",
+				LastTransitionTime: metav1.Time{},
+				Message:            "xxxx",
+				Name:               "redis-cluster-0",
+				NodeId:             "allkk111snknkcs",
+				Reason:             "xxxx",
+				Slots:              "1024",
+				Status:             "False",
+				Type:               "master",
+			},
+			{
+				DomainName:         "redis-cluster-0.redis-cluster.kube-system.svc.cluster.local",
+				HostIP:             "192.168.26.122",
+				Hostname:           "docker-vm-3",
+				LastTransitionTime: metav1.Time{},
+				Message:            "qqqqqq",
+				Name:               "redis-cluster-0",
+				NodeId:             "allkk111snknkcs",
+				Reason:             "xxxx",
+				Slots:              "1024",
+				Status:             "False",
+				Type:               "master",
+			},
+		},
+	}
+
+	tempStatus2 := v1alpha1.RedisClusterStatus{
+		Conditions: []v1alpha1.RedisClusterCondition{
+			{
+				DomainName:         "redis-cluster-0.redis-cluster.kube-system.svc.cluster.local",
+				HostIP:             "192.168.26.123",
+				Hostname:           "docker-vm-3",
+				LastTransitionTime: metav1.Time{},
+				Message:            "qqqqqq",
+				Name:               "redis-cluster-1",
+				NodeId:             "allkk111snknkcs",
+				Reason:             "xxxx",
+				Slots:              "1024",
+				Status:             "False",
+				Type:               "master",
+			},
+			{
+				DomainName:         "redis-cluster-0.redis-cluster.kube-system.svc.cluster.local",
+				HostIP:             "192.168.26.1",
+				Hostname:           "docker-vm-3",
+				LastTransitionTime: metav1.Time{},
+				Message:            "xxxx",
+				Name:               "redis-cluster-0",
+				NodeId:             "allkk111snknkcs",
+				Reason:             "xxxx",
+				Slots:              "1024",
+				Status:             "False",
+				Type:               "master",
+			},
+		},
+	}
+
+	t.Logf("Before sort Conditions: %v", tempStatus2.Conditions)
+
+	sort.SliceStable(tempStatus2.Conditions, func(i, j int) bool {
+		name1 := tempStatus2.Conditions[i].Name
+		name2 := tempStatus2.Conditions[j].Name
+		return name1 < name2
+	})
+
+	t.Logf("After sort Conditions: %v", tempStatus2.Conditions)
+	t.Logf("tempStatus1 equal tempStatus2: %v", util.DeepEqualRedisClusterStatus(tempStatus1, tempStatus2))
+
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	redistype "harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
+	"harmonycloud.cn/middleware-operator-manager/util"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -410,10 +411,11 @@ func (rco *RedisClusterOperator) checkPodInstanceIsReadyByEndpoint(redisCluster 
 //abnormalReason：异常原因
 func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistype.RedisCluster, endpoints *v1.Endpoints, phase redistype.RedisClusterPhase, abnormalReason string) (*redistype.RedisCluster, error) {
 
+	var tempStatus redistype.RedisClusterStatus
 	switch phase {
 	//代表该CRD刚创建
 	case redistype.RedisClusterNone:
-		redisCluster.Status = redistype.RedisClusterStatus{
+		tempStatus = redistype.RedisClusterStatus{
 			Phase:  redistype.RedisClusterNone,
 			Reason: abnormalReason,
 		}
@@ -427,7 +429,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			return err
 		}*/
 
-		redisCluster.Status = redistype.RedisClusterStatus{
+		tempStatus = redistype.RedisClusterStatus{
 			//Replicas: *sts.Spec.Replicas,
 			Replicas: 0,
 			Phase:    redistype.RedisClusterCreating,
@@ -464,14 +466,12 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			return redisCluster, err
 		}
 
-		redisCluster.Status = redistype.RedisClusterStatus{
+		tempStatus = redistype.RedisClusterStatus{
 			Replicas:   *sts.Spec.Replicas,
 			Phase:      redistype.RedisClusterRunning,
 			Reason:     abnormalReason,
 			Conditions: clusterConditions,
 		}
-
-		//TODO 判断新旧clusterConditions是否变化(除LastTransitionTime字段),变化才更新状态,避免更新频繁(其实只是LastTransitionTime变化了)
 
 		//代表着实例不一致(用户修改实例，operator发现实例不一致，更新statefulset，更新状态)
 	case redistype.RedisClusterScaling:
@@ -482,9 +482,9 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			glog.Errorf(err.Error())
 			return redisCluster, err
 		}
-		redisCluster.Status.Replicas = *sts.Spec.Replicas
-		redisCluster.Status.Phase = redistype.RedisClusterScaling
-		redisCluster.Status.Reason = abnormalReason
+		tempStatus.Replicas = *sts.Spec.Replicas
+		tempStatus.Phase = redistype.RedisClusterScaling
+		tempStatus.Reason = abnormalReason
 
 		//代表着升级中
 	case redistype.RedisClusterUpgrading:
@@ -495,9 +495,9 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			glog.Errorf(err.Error())
 			return redisCluster, err
 		}
-		redisCluster.Status.Replicas = *sts.Spec.Replicas
-		redisCluster.Status.Phase = redistype.RedisClusterUpgrading
-		redisCluster.Status.Reason = abnormalReason
+		tempStatus.Replicas = *sts.Spec.Replicas
+		tempStatus.Phase = redistype.RedisClusterUpgrading
+		tempStatus.Reason = abnormalReason
 
 		//代表着某异常故障
 	case redistype.RedisClusterFailed:
@@ -508,9 +508,9 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			glog.Errorf(err.Error())
 			return redisCluster, err
 		}
-		redisCluster.Status.Replicas = *sts.Spec.Replicas
-		redisCluster.Status.Phase = redistype.RedisClusterFailed
-		redisCluster.Status.Reason = abnormalReason
+		tempStatus.Replicas = *sts.Spec.Replicas
+		tempStatus.Phase = redistype.RedisClusterFailed
+		tempStatus.Reason = abnormalReason
 		//代表着某异常故障
 	case redistype.RedisClusterDeleting:
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
@@ -520,21 +520,35 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			glog.Errorf(err.Error())
 			return redisCluster, err
 		}
-		redisCluster.Status.Replicas = *sts.Spec.Replicas
-		redisCluster.Status.Phase = redistype.RedisClusterDeleting
-		redisCluster.Status.Reason = abnormalReason
+		tempStatus.Replicas = *sts.Spec.Replicas
+		tempStatus.Phase = redistype.RedisClusterDeleting
+		tempStatus.Reason = abnormalReason
 	}
 
-	//TODO 1.10以下版本的k8s是否对子资源支持？
-	//updatedRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).UpdateStatus(redisCluster)
-	newRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Update(redisCluster)
-	if err != nil {
-		err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
-		glog.Errorf(err.Error())
-		return newRedisCluster, err
+	// sort
+	sort.SliceStable(tempStatus.Conditions, func(i, j int) bool {
+		name1 := tempStatus.Conditions[i].Name
+		name2 := tempStatus.Conditions[j].Name
+		return name1 < name2
+	})
+
+	//判断新旧clusterConditions是否变化(除LastTransitionTime字段),变化才更新状态,避免更新频繁(其实只是LastTransitionTime变化了)
+	if !util.DeepEqualRedisClusterStatus(tempStatus, redisCluster.Status) {
+		redisCluster.Status = tempStatus
+
+		//TODO 1.10以下版本的k8s是否对子资源支持？
+		//updatedRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).UpdateStatus(redisCluster)
+		newRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Update(redisCluster)
+		if err != nil {
+			err = fmt.Errorf("update redisCluster:%v/%v status is error: %v", redisCluster.Namespace, redisCluster.Name, err)
+			glog.Errorf(err.Error())
+			return newRedisCluster, err
+		}
+
+		return newRedisCluster, nil
 	}
 
-	return newRedisCluster, nil
+	return redisCluster, nil
 }
 
 //构造redisCluster的状态Condition信息
@@ -1196,7 +1210,7 @@ func (rco *RedisClusterOperator) dropRedisCluster(redisCluster *redistype.RedisC
 	return err
 }
 
-//分配master和slave ip,符合:1、两个主节点尽可能不在同一节点上;2、master和对应salve尽可能不在同一宿主机上
+//分配master和slave ip,符合:1、两个主节点尽可能不在同一节点上;2、master和对应slave尽可能不在同一宿主机上
 //endpoints：扩实例之后的endpoint信息
 //redisCluster：redisCluster对象
 //oldEndpoints：扩实例之前的endpoint信息
@@ -1362,5 +1376,9 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 	return masterInstanceIPs, slaveInstanceIPs, nil
 }
 
-//TODO 异常场景下的处理，包括： 1、升级时redis集群异常中断、2、正在创建升级时redisCluster挂掉后恢复；3、pod在指定时间内没起来，创建或者升级超时，后来起来了，怎么继续创建或升级
-//TODO master和slave的IP划分
+/*
+TODO 异常场景下的处理，包括：
+1、升级时redis集群异常中断；
+2、正在创建升级时redisCluster挂掉后恢复；
+3、pod在指定时间内没起来，创建或者升级超时，后来起来了，怎么继续创建或升级
+*/

@@ -47,7 +47,6 @@ import (
 	"k8s.io/kubernetes/pkg/controller"
 	"reflect"
 	"time"
-	"strings"
 )
 
 const (
@@ -60,8 +59,8 @@ const (
 	redisServicePort6379  = 6379
 	redisServicePort16379 = 16379
 	pauseKey              = "pause.middleware.harmonycloud.cn"
-	defaultPipeline              = "10"
-	finalizersForeGround = "Foreground"
+	defaultPipeline       = "10"
+	finalizersForeGround  = "Foreground"
 )
 
 type handleClusterType int
@@ -481,18 +480,18 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		glog.V(2).Infof("RedisCluster %v/%v has been create firstly, will create and init redis cluster", namespace, name)
 		handleFlag = createCluster
 	} else {
-		//删除集群
-		if strings.EqualFold(redisCluster.Spec.Finalizers, string(v1.DeletePropagationForeground)) {
-			//删除集群观云台做
-			handleFlag = dropCluster
-		} else if *redisCluster.Spec.Replicas <= *existSts.Spec.Replicas {
+		if *redisCluster.Spec.Replicas <= *existSts.Spec.Replicas {
 			//可能是升级操作也可能是强制同步;升级操作：实例和当前sts实例不一样
 
 			//redisCluster里实例数小于当前sts实例数,只检查状态不进行缩容,TODO 缩容需求
 			return rco.checkAndUpdateRedisClusterStatus(redisCluster)
-		} else {
+			//cr对象中实例数大于existSts实例数且如果不是删除,就是升级集群
+		} else if existSts.DeletionTimestamp == nil {
 			//redisCluster实例数大于当前sts实例数,则为扩容
 			handleFlag = upgradeCluster
+		} else {
+			// 正在进行删除集群(cr、statefulset、svc)的操作,什么都不做
+			return nil
 		}
 	}
 
