@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1235,6 +1236,15 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 		nodeIPs[*addr.NodeName] = append(nodeIPs[*addr.NodeName], addr)
 	}
 
+	//将nodeIPs map的key排序,保证多次遍历map时输出顺序一致
+	sortedKeys := make([]string, 0)
+	for k := range nodeIPs {
+		sortedKeys = append(sortedKeys, k)
+	}
+
+	// sort 'string' key in increasing order
+	sort.Strings(sortedKeys)
+
 	// slave replicas count
 	replicas := 1
 	// all master and slave count
@@ -1248,15 +1258,17 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 	for isLoop {
 		// take one ip from each node until we run out of addr
 		// across every node.
-		for nodeName, addr := range nodeIPs {
-			if len(addr) == 0 {
+		// loop map by sortedKeys Guarantee same order loop repeatedly
+		// ref：https://blog.csdn.net/slvher/article/details/44779081
+		for _, key := range sortedKeys {
+			if len(nodeIPs[key]) == 0 {
 				if len(interleaved) == nodesCount {
 					isLoop = false
 					continue
 				}
 			} else {
-				interleaved = append(interleaved, addr[0])
-				nodeIPs[nodeName] = addr[1:]
+				interleaved = append(interleaved, nodeIPs[key][0])
+				nodeIPs[key] = nodeIPs[key][1:]
 			}
 		}
 	}
@@ -1275,6 +1287,9 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 	// Remaining
 	interleaved = interleaved[mastersCount:]
 
+	// Rotating the list sometimes helps to get better initial anti-affinity before the optimizer runs.
+	interleaved = append(interleaved[1:], interleaved[:1]...)
+
 	// slave ips
 	var slaveInstanceIPs []string
 
@@ -1282,11 +1297,15 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 	//defer glog.V(4).Infof("masterInstanceIPs: %v\nslaveInstanceIPs: %v", masterInstanceIPs, slaveInstanceIPs)
 	//这里要用闭包方式打印日志,否则slaveInstanceIPs是空slice
 	// ref:https://www.kancloud.cn/liupengjie/go/576456
+	var slaves []v1.EndpointAddress
 	defer func() {
-		glog.V(4).Infof("\nmasterInstanceIPs: %v\nslaveInstanceIPs: %v", masterInstanceIPs, slaveInstanceIPs)
-		for i := 0; i < len(masterInstanceIPs); i++ {
-			glog.V(4).Infof("\nmasterInstanceIP: %v slaveInstanceIPs: %v nodeName equal? %v\n", masterInstanceIPs[i], slaveInstanceIPs[i], masterInstanceIPs[i] == slaveInstanceIPs[i])
+		// 判断一组master、slave是否在同一节点上
+		for i := 0; i < len(masters); i++ {
+			if *(masters[i].NodeName) == *(slaves[i].NodeName) {
+				glog.Warningf("A group [master->slave] nodeName equal; masterInstanceIP: %v slaveInstanceIPs: %v \n", masterInstanceIPs[i], slaveInstanceIPs[i])
+			}
 		}
+		glog.V(4).Infof("\nmasterInstanceIPs: %v\nslaveInstanceIPs: %v", masterInstanceIPs, slaveInstanceIPs)
 	}()
 
 	for _, master := range masters {
@@ -1319,9 +1338,17 @@ func (rco *RedisClusterOperator) assignMasterSlaveIP(redisCluster *redistype.Red
 			} else {
 				slaveInstanceIPs = append(slaveInstanceIPs, interleaved[0].IP)
 				removeIndex = 0
+
 			}
 
+			// 用于判断一组master、slave是否在同一节点上
+			slaves = append(slaves, interleaved[removeIndex])
+
 			//remove assigned addr
+			// if interleaved = ["0", "1", "2"]
+			// removeIndex = 0 -- >> interleaved[:0], interleaved[1:]...  -- >> ["1", "2"]
+			// removeIndex = 1 -- >> interleaved[:1], interleaved[2:]...  -- >> ["0", "2"]
+			// removeIndex = 2 -- >> interleaved[:2], interleaved[3:]...  -- >> ["0", "1"]
 			interleaved = append(interleaved[:removeIndex], interleaved[removeIndex+1:]...)
 
 			// nodesCount dec

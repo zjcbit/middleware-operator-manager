@@ -3,13 +3,14 @@ package redis
 import (
 	"errors"
 	"fmt"
+	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sort"
 	"strings"
 	"testing"
 	"time"
-	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/api/core/v1"
-	)
+)
 
 func TestBuildNodeInfo(t *testing.T) {
 
@@ -86,26 +87,24 @@ func TestDefer(t *testing.T) {
 	defer fmt.Println("22222222")
 }
 
-
-func TestIota (t *testing.T) {
+func TestIota(t *testing.T) {
 	fmt.Println(createCluster)
 	fmt.Println(upgradeCluster)
 	fmt.Println(dropCluster)
 }
 
-func TestIngoreCase (t *testing.T) {
+func TestIngoreCase(t *testing.T) {
 	fmt.Println(strings.EqualFold("foreground", "Foreground"))
 	fmt.Println(strings.EqualFold("ForeGround", "Foreground"))
 }
 
-func TestAssignMasterSlaveIP (t *testing.T) {
-	rco := &RedisClusterOperator{
-	}
+func TestAssignMasterSlaveIP(t *testing.T) {
+	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster {
-		ObjectMeta: metav1.ObjectMeta  {
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "kube-system",
-			Name: "example000-redis-cluster",
+			Name:      "example000-redis-cluster",
 		},
 	}
 
@@ -115,32 +114,32 @@ func TestAssignMasterSlaveIP (t *testing.T) {
 	d := "10.10.103.152-slave"
 	e := "10.10.104.15-slave"
 	f := "10.10.105.14-slave"
-	endpoints := &v1.Endpoints {
-		Subsets: []v1.EndpointSubset {
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
 			{
-				Addresses: []v1.EndpointAddress {
+				Addresses: []v1.EndpointAddress{
 					{
-						IP: "10.168.131.67",
+						IP:       "10.168.131.67",
 						NodeName: &a,
 					},
 					{
-						IP: "10.168.132.35",
+						IP:       "10.168.132.35",
 						NodeName: &b,
 					},
 					{
-						IP: "10.168.132.36",
+						IP:       "10.168.132.36",
 						NodeName: &b,
 					},
 					{
-						IP: "10.168.33.119",
+						IP:       "10.168.33.119",
 						NodeName: &c,
 					},
 					{
-						IP: "10.168.33.120",
+						IP:       "10.168.33.120",
 						NodeName: &c,
 					},
 					{
-						IP: "10.168.9.186",
+						IP:       "10.168.9.186",
 						NodeName: &d,
 					},
 				},
@@ -152,48 +151,48 @@ func TestAssignMasterSlaveIP (t *testing.T) {
 	t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
 	oldEndpoints := endpoints
-	newEndpoints := &v1.Endpoints {
-		Subsets: []v1.EndpointSubset {
+	newEndpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
 			{
-				Addresses: []v1.EndpointAddress {
+				Addresses: []v1.EndpointAddress{
 					{
-						IP: "10.168.131.67",
+						IP:       "10.168.131.67",
 						NodeName: &a,
 					},
 					{
-						IP: "10.168.132.35",
+						IP:       "10.168.132.35",
 						NodeName: &b,
 					},
 					{
-						IP: "10.168.132.36",
+						IP:       "10.168.132.36",
 						NodeName: &b,
 					},
 					{
-						IP: "10.168.33.119",
+						IP:       "10.168.33.119",
 						NodeName: &c,
 					},
 					{
-						IP: "10.168.33.120",
+						IP:       "10.168.33.120",
 						NodeName: &c,
 					},
 					{
-						IP: "10.168.9.186",
+						IP:       "10.168.9.186",
 						NodeName: &d,
 					},
 					{
-						IP: "10.168.10.18",
+						IP:       "10.168.10.18",
 						NodeName: &e,
 					},
 					{
-						IP: "10.168.11.192",
+						IP:       "10.168.11.192",
 						NodeName: &f,
 					},
 					{
-						IP: "10.168.11.5",
+						IP:       "10.168.11.5",
 						NodeName: &e,
 					},
 					{
-						IP: "10.168.12.9",
+						IP:       "10.168.12.9",
 						NodeName: &e,
 					},
 				},
@@ -227,10 +226,8 @@ func TestDeferErr(t *testing.T) {
 	err = errors.New("222")
 }
 
-
-func TestCreateAssignMasterSlaveIP (t *testing.T) {
-	rco := &RedisClusterOperator{
-	}
+func TestCreateAssignMasterSlaveIP(t *testing.T) {
+	rco := &RedisClusterOperator{}
 
 	redisCluster := &v1alpha1.RedisCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -278,8 +275,725 @@ func TestCreateAssignMasterSlaveIP (t *testing.T) {
 		},
 	}
 
-	for i:= 0; i < 10; i++ {
+	for i := 0; i < 10; i++ {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
 		t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+
+func TestCreateAssignMasterSlaveIPOneNode(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &a,
+					},
+				},
+			},
+		},
+	}
+
+	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
+	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
+	masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+}
+
+func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	// 5a 1b
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &a,
+					},
+				},
+			},
+		},
+	}
+
+	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
+	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
+	masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+
+	// 4a 2b
+	endpoints = &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &a,
+					},
+				},
+			},
+		},
+	}
+
+	//masterIP: [10.168.132.44 10.168.131.105 10.168.132.45]
+	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
+	masterIP, slaveIP, err = rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+
+	// 3a 3b
+	endpoints = &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
+	//slaveIP: [10.168.33.67 10.168.33.66 10.168.9.134]
+	masterIP, slaveIP, err = rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+}
+
+func TestCreateAssignMasterSlaveIPThreeNode1(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+
+	// 3a 2b 1c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &c,
+					},
+				},
+			},
+		},
+	}
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+func TestCreateAssignMasterSlaveIPThreeNode2(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+	// 4a 1b 1c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &a,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+func TestCreateAssignMasterSlaveIPThreeNode3(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+
+	// 3a 2b 1c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &c,
+					},
+				},
+			},
+		},
+	}
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+func TestCreateAssignMasterSlaveIPThreeNode4(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+
+	// 2a 2b 2c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+
+}
+func TestCreateAssignMasterSlaveIPThreeNode5(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+
+	// 2a 3b 1c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+
+func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-bb"
+	d := "10.10.103.154-cc"
+	// 3a 1b 1c 1d
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &d,
+					},
+				},
+			},
+		},
+	}
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+
+	// 2a 2b 1c 1d
+	endpoints = &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &d,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+
+	// 2a 2b 1c 1d
+	endpoints = &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &d,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+func TestCreateAssignMasterSlaveIPFourNode1(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	redisCluster := &v1alpha1.RedisCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
+	}
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-bb"
+	d := "10.10.103.154-cc"
+
+	// 2a 2b 1c 1d
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				// c ("10.168.131.105") d("10.168.132.44")
+				//a ("10.168.132.45", "10.168.33.66")  b("10.168.33.67", "10.168.9.134" )
+				// [10.168.131.105", "10.168.132.44", "10.168.132.45", "10.168.9.134", "10.168.33.67", "10.168.33.66"  ]
+				// Rotating the list sometimes helps to get better initial anti-affinity before the optimizer runs.
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &d,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	for i := 10000; i > 0; i-- {
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
+	}
+}
+
+func TestSliceRemoveIndex(t *testing.T) {
+
+	interleaved := []string{"0", "1", "2"}
+
+	removeIndex := 0
+
+	//remove assigned addr
+	// if interleaved = ["0", "1", "2"]
+	// removeIndex = 0 -- >> interleaved[:0], interleaved[1:]...  -- >> ["1", "2"]
+	// removeIndex = 1 -- >> interleaved[:1], interleaved[2:]...  -- >> ["0", "2"]
+	// removeIndex = 2 -- >> interleaved[:2], interleaved[3:]...  -- >> ["0", "1"]
+	interleaved = append(interleaved[:removeIndex], interleaved[removeIndex+1:]...)
+	t.Logf("interleaved: %v", interleaved)
+
+	interleaved = []string{"0", "1", "2"}
+	removeIndex = 1
+	interleaved = append(interleaved[:removeIndex], interleaved[removeIndex+1:]...)
+	t.Logf("interleaved: %v", interleaved)
+
+	interleaved = []string{"0", "1", "2"}
+	removeIndex = 2
+	interleaved = append(interleaved[:removeIndex], interleaved[removeIndex+1:]...)
+	t.Logf("interleaved: %v", interleaved)
+
+	/*
+		len(interleaved): 3 cap(interleaved): 3
+		interleaved: []
+	*/
+	interleaved = []string{"0", "1", "2"}
+	t.Logf("len(interleaved): %v cap(interleaved): %v", len(interleaved), cap(interleaved))
+	t.Logf("interleaved: %v", interleaved[3:])
+
+	/*
+		i: 0 v:
+		i: 1 v:
+		i: 2 v:
+	*/
+	interleaved = make([]string, 3, 10)
+	for i, v := range interleaved {
+		t.Logf("i: %v v: %v", i, v)
+	}
+
+	/**
+	len(interleaved): 3 cap(interleaved): 10
+	interleaved: []
+	*/
+	t.Logf("len(interleaved): %v cap(interleaved): %v", len(interleaved), cap(interleaved))
+	t.Logf("interleaved: %v", interleaved[3:])
+	// panic: runtime error: slice bounds out of range
+	//t.Logf("interleaved: %v", interleaved[4:])
+
+	interleaved = []string{"0", "1", "2", "3", "4", "5", "6"}
+
+	// interleaved: [3 4 5 6]
+	interleaved = interleaved[3:]
+	t.Logf("interleaved: %v", interleaved)
+
+	// interleaved: [3 4]
+	interleaved = interleaved[0:2]
+	t.Logf("interleaved: %v", interleaved)
+}
+
+func TestLoopMap(t *testing.T) {
+	m := make(map[string]string)
+	m["hello"] = "echo hello"
+	m["world"] = "echo world"
+	m["go"] = "echo go"
+	m["is"] = "echo is"
+	m["cool"] = "echo cool"
+
+	sortedKeys := make([]string, 0)
+	for k := range m {
+		fmt.Println("k--", k)
+		sortedKeys = append(sortedKeys, k)
+	}
+
+	// sort 'string' key in increasing order
+	sort.Strings(sortedKeys)
+
+	for _, k := range sortedKeys {
+		fmt.Printf("k=%v, v=%v\n", k, m[k])
 	}
 }
