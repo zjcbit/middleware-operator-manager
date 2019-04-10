@@ -32,6 +32,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -537,8 +538,15 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		}
 
 		//更新状态为Scaling
-		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterDeleting, "")
+		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterScaling, "")
 		if err != nil {
+			return err
+		}
+
+		oldEndpoints, err := rco.defaultClient.CoreV1().Endpoints(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
+		if err != nil {
+			//更新状态为Failed
+			rco.updateRedisClusterStatus(redisCluster, oldEndpoints, redistype.RedisClusterFailed, err.Error())
 			return err
 		}
 
@@ -552,7 +560,7 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		}
 
 		//检测endpoint pod都ready,则升级扩容集群
-		err = rco.upgradeRedisCluster(newRedisCluster)
+		err = rco.upgradeRedisCluster(newRedisCluster, oldEndpoints)
 	//删除集群
 	case dropCluster:
 		//更新状态为Deleting

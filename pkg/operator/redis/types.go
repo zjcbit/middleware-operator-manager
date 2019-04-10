@@ -1,9 +1,11 @@
 package redis
 
 const (
-	masterFlagType  string = "master"
-	slaveFlagType   string = "slave"
-	clusterStatusOK        = "cluster_state:ok"
+	masterFlagType            string = "master"
+	slaveFlagType             string = "slave"
+	clusterStatusOK                  = "cluster_state:ok"
+	clusterKnownNodesOnlySelf        = "cluster_known_nodes:1"
+	clusterStateFailed               = "cluster state failed"
 )
 
 /*
@@ -30,7 +32,7 @@ type redisNodeInfo struct {
 	NodeId string `json:"nodeId,omitempty"`
 	//ip:port：节点的ip地址和端口号，例如192.168.64.102:8002
 	IpPort string `json:"ipPort,omitempty"`
-	//flags：节点的角色(master,slave,myself)以及状态(pfail,fail)
+	//flags：节点的角色(master、slave、myself,master、myself,slave、myself,pfail、myself,fail)以及状态(pfail,fail)
 	Flags string `json:"flags,omitempty"`
 	//slave的master id
 	Master string `json:"master,omitempty"`

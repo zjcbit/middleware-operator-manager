@@ -3,6 +3,7 @@ package redis
 import (
 	"errors"
 	"fmt"
+	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app/options"
 	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
 	"harmonycloud.cn/middleware-operator-manager/util"
 	"k8s.io/api/core/v1"
@@ -147,8 +148,8 @@ func TestAssignMasterSlaveIP(t *testing.T) {
 			},
 		},
 	}
-
-	masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
 	oldEndpoints := endpoints
@@ -200,8 +201,8 @@ func TestAssignMasterSlaveIP(t *testing.T) {
 			},
 		},
 	}
-
-	masterIP, slaveIP, err = rco.assignMasterSlaveIP(redisCluster, newEndpoints, oldEndpoints)
+	endpointAddresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, newEndpoints, oldEndpoints)
+	masterIP, slaveIP, err = rco.assignMasterSlaveIP(endpointAddresses)
 	t.Logf("upgrade masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
 
@@ -277,7 +278,8 @@ func TestCreateAssignMasterSlaveIP(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -328,7 +330,8 @@ func TestCreateAssignMasterSlaveIPOneNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
 
@@ -380,7 +383,8 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
 	// 4a 2b
@@ -419,7 +423,8 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.132.44 10.168.131.105 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	masterIP, slaveIP, err = rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	masterIP, slaveIP, err = rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
 	// 3a 3b
@@ -458,7 +463,8 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.67 10.168.33.66 10.168.9.134]
-	masterIP, slaveIP, err = rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	masterIP, slaveIP, err = rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
 
@@ -509,8 +515,9 @@ func TestCreateAssignMasterSlaveIPThreeNode1(t *testing.T) {
 			},
 		},
 	}
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -560,9 +567,9 @@ func TestCreateAssignMasterSlaveIPThreeNode2(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -613,8 +620,9 @@ func TestCreateAssignMasterSlaveIPThreeNode3(t *testing.T) {
 			},
 		},
 	}
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -665,9 +673,9 @@ func TestCreateAssignMasterSlaveIPThreeNode4(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 
@@ -719,9 +727,9 @@ func TestCreateAssignMasterSlaveIPThreeNode5(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -773,8 +781,9 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 
@@ -811,9 +820,9 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 
@@ -850,9 +859,9 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -908,9 +917,9 @@ func TestCreateAssignMasterSlaveIPFourNode1(t *testing.T) {
 			},
 		},
 	}
-
+	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
 	for i := 10000; i > 0; i-- {
-		masterIP, slaveIP, err := rco.assignMasterSlaveIP(redisCluster, endpoints, nil)
+		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
 }
@@ -1074,4 +1083,61 @@ func TestDeepEqualExcludeFiled(t *testing.T) {
 	t.Logf("After sort Conditions: %v", tempStatus2.Conditions)
 	t.Logf("tempStatus1 equal tempStatus2: %v", util.DeepEqualRedisClusterStatus(tempStatus1, tempStatus2))
 
+}
+
+func TestAssignIP(t *testing.T) {
+	rco := &RedisClusterOperator{}
+
+	op := &options.OperatorManagerServer{
+		OperatorManagerConfig: v1alpha1.OperatorManagerConfig{
+			ClusterTimeOut: 3,
+		},
+	}
+
+	rco.options = op
+
+	a := "10.10.103.154-share"
+	b := "10.10.103.154-aa"
+	c := "10.10.103.154-cc"
+
+	// 2a 2b 2c
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP:       "10.168.131.105",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.132.44",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.132.45",
+						NodeName: &b,
+					},
+					{
+						IP:       "10.168.33.66",
+						NodeName: &a,
+					},
+					{
+						IP:       "10.168.33.67",
+						NodeName: &c,
+					},
+					{
+						IP:       "10.168.9.134",
+						NodeName: &b,
+					},
+				},
+			},
+		},
+	}
+
+	expectedConnector := make(map[string]string)
+	expectedConnector["10.168.132.45"] = "10.168.33.67"
+
+	masterInstanceIPs, slaveInstanceIPs, err := rco.waitExpectMasterSlaveIPAssign(endpoints.Subsets[0].Addresses, expectedConnector)
+
+	t.Logf("masterInstanceIPs: %v ; slaveInstanceIPs: %v ; error: %v", masterInstanceIPs, slaveInstanceIPs, err)
 }
