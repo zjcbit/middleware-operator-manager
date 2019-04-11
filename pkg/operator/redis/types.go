@@ -85,3 +85,12 @@ type clusterStatusInfo struct {
 	ClusterStatsMessagesSent     string `json:"clusterStatsMessagesSent,omitempty"`
 	ClusterStatsMessagesReceived string `json:"clusterStatsMessagesReceived,omitempty"`
 }
+
+type redisTribInfo struct {
+	Ip           string `json:"ip,omitempty"`
+	Port         string `json:"port,omitempty"`
+	NodeIdPrefix string `json:"nodeIdPrefix,omitempty"`
+	Keys         int    `json:"keys,omitempty"`
+	Slots        int    `json:"slots,omitempty"`
+	Slaves       int    `json:"slaves,omitempty"`
+}

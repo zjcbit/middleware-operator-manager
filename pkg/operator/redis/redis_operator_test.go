@@ -8,6 +8,7 @@ import (
 	"harmonycloud.cn/middleware-operator-manager/util"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -1140,4 +1141,21 @@ func TestAssignIP(t *testing.T) {
 	masterInstanceIPs, slaveInstanceIPs, err := rco.waitExpectMasterSlaveIPAssign(endpoints.Subsets[0].Addresses, expectedConnector)
 
 	t.Logf("masterInstanceIPs: %v ; slaveInstanceIPs: %v ; error: %v", masterInstanceIPs, slaveInstanceIPs, err)
+}
+
+func TestRedisTribInfoReg(t *testing.T) {
+	reg := `([\d.]+):6379 \((\w+)...\) -> (\d+) keys \| (\d+) slots \| (\d+) slaves`
+	infos := `10.168.33.80:6379 (9ffde2b6...) -> 0 keys | 5461 slots | 1 slaves.
+10.168.9.165:6379 (c9537d65...) -> 0 keys | 5461 slots | 1 slaves.
+10.168.32.72:6379 (27288e18...) -> 0 keys | 5462 slots | 1 slaves.
+[OK] 0 keys in 3 masters.
+0.00 keys per slot on average.`
+
+	compile := regexp.MustCompile(reg)
+
+	submatch := compile.FindStringSubmatch(infos)
+
+	for i, v := range submatch {
+		t.Log(i, " -->> ", v)
+	}
 }

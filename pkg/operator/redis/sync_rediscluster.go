@@ -381,8 +381,9 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 	//代表该CRD刚创建
 	case redistype.RedisClusterNone:
 		tempStatus = redistype.RedisClusterStatus{
-			Phase:  redistype.RedisClusterNone,
-			Reason: abnormalReason,
+			Phase:      redistype.RedisClusterNone,
+			Reason:     abnormalReason,
+			Conditions: redisCluster.Status.Conditions,
 		}
 		//代表等待redis资源对象创建完毕
 	case redistype.RedisClusterCreating:
@@ -399,6 +400,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 			Replicas: 0,
 			Phase:    redistype.RedisClusterCreating,
 			Reason:   abnormalReason,
+			//Conditions: redisCluster.Status.Conditions,
 		}
 
 		//代表已进行初始化操作
@@ -450,6 +452,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 		tempStatus.Replicas = *sts.Spec.Replicas
 		tempStatus.Phase = redistype.RedisClusterScaling
 		tempStatus.Reason = abnormalReason
+		tempStatus.Conditions = redisCluster.Status.Conditions
 
 		//代表着升级中
 	case redistype.RedisClusterUpgrading:
@@ -463,6 +466,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 		tempStatus.Replicas = *sts.Spec.Replicas
 		tempStatus.Phase = redistype.RedisClusterUpgrading
 		tempStatus.Reason = abnormalReason
+		tempStatus.Conditions = redisCluster.Status.Conditions
 
 		//代表着某异常故障
 	case redistype.RedisClusterFailed:
@@ -476,6 +480,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 		tempStatus.Replicas = *sts.Spec.Replicas
 		tempStatus.Phase = redistype.RedisClusterFailed
 		tempStatus.Reason = abnormalReason
+		tempStatus.Conditions = redisCluster.Status.Conditions
 		//代表着某异常故障
 	case redistype.RedisClusterDeleting:
 		sts, err := rco.defaultClient.AppsV1().StatefulSets(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
@@ -488,6 +493,7 @@ func (rco *RedisClusterOperator) updateRedisClusterStatus(redisCluster *redistyp
 		tempStatus.Replicas = *sts.Spec.Replicas
 		tempStatus.Phase = redistype.RedisClusterDeleting
 		tempStatus.Reason = abnormalReason
+		tempStatus.Conditions = redisCluster.Status.Conditions
 	}
 
 	// sort
@@ -1058,7 +1064,6 @@ func (rco *RedisClusterOperator) waitExpectMasterSlaveIPAssign(addresses []v1.En
 			return false, fmt.Errorf("assign master slave IP is error: %v", err)
 		}
 
-		fmt.Println("masterInstanceIPs, slaveInstanceIPs", masterInstanceIPs, slaveInstanceIPs)
 		for i, masterIp := range masterInstanceIPs {
 			if slaveIp, ok := expectedConnector[masterIp]; ok {
 				if slaveIp != slaveInstanceIPs[i] {
@@ -1141,6 +1146,7 @@ func (rco *RedisClusterOperator) scaleRedisCluster(redisCluster *redistype.Redis
 		return nil, nil, err
 	}
 
+	//TODO 升级时IP分配需要参考升级前的,防止分配结果不符合master、slave IP分配要求
 	willAssignIPAddresses, err := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, oldEndpoints)
 	if err != nil {
 		return nil, nil, err
