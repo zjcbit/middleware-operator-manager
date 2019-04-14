@@ -192,7 +192,7 @@ status:
 
 结构体定义到$ProjectName/pkg/apis/{中间件名称}/{版本号}/types.go里：
 
-![1555034346251](C:\Users\lenovo\AppData\Local\Temp\1555034346251.png)
+![1555034346251](./artifacts/png/1555034346251.png)
 
 
 
@@ -201,7 +201,7 @@ types.go中结构体定义根据上面准备的CR yaml定义。如下，其中�
 * // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object注解表示：为该类型生成 func (t* T) DeepCopy() *T方法。API类型都需要实现深拷贝；
 * // +genclient注解表示为当前类型生成客户端。
 
-![1555034479011](C:\Users\lenovo\AppData\Local\Temp\1555034479011.png)
+![1555034479011](./artifacts/png/1555034479011.png)
 
 
 
@@ -265,7 +265,7 @@ code-generator地址如下，下载后放到$GOPATH/src/k8s.io/目录下：
 
 执行后将生成以下代码：
 
-![1555048034269](C:\Users\lenovo\AppData\Local\Temp\1555048034269.png)
+![1555048034269](./artifacts/png/1555048034269.png)
 
 
 
@@ -281,7 +281,7 @@ code-generator地址如下，下载后放到$GOPATH/src/k8s.io/目录下：
 
 
 
-![1555038043092](C:\Users\lenovo\AppData\Local\Temp\1555038043092.png)
+![1555038043092](./artifacts/png/1555038043092.png)
 
 首先operator的入口为operator-manager.go里的main函数。
 
@@ -665,7 +665,7 @@ func (rco *RedisClusterOperator) worker() {
 
 从informer监听到资源对象变化，回调函数将资源对象key（namespace/name）放到queue中，到worker取出queue中的key去做处理，处理完成后Done掉key流程图如下：
 
-![1555132855476](C:\Users\lenovo\AppData\Local\Temp\1555132855476.png)
+![1555132855476](./artifacts/png/1555132855476.png)
 
 
 
@@ -701,17 +701,17 @@ func (rco *RedisClusterOperator) processNextWorkItem() bool {
 
 * 开启worker时，调用cache.WaitForCacheSync等待缓存开始同步。
 
-  ![1555134717035](C:\Users\lenovo\AppData\Local\Temp\1555134717035.png)
+  ![1555134717035](./artifacts/png/1555134717035.png)
 
 * 不要改变原始对象（从lister中取出的对象），而要使用DeepCopy，因为缓存在informer之间共享。
 
-  ![1555134585990](C:\Users\lenovo\AppData\Local\Temp\1555134585990.png)
+  ![1555134585990](./artifacts/png/1555134585990.png)
 
   
 
 * 根据CRD构建Statefulset时，给Statefulset加OwnerReferences，这样在删除CRD的时候，可以设置是否级联删除statefulset。
 
-  ![1555134536095](C:\Users\lenovo\AppData\Local\Temp\1555134536095.png)
+  ![1555134536095](./artifacts/png/1555134536095.png)
 
 
 
@@ -719,7 +719,7 @@ func (rco *RedisClusterOperator) processNextWorkItem() bool {
 
 本地用IDE--goland调试代码时，配置如下：
 
-![1555136612836](C:\Users\lenovo\AppData\Local\Temp\1555136612836.png)
+![1555136612836](./artifacts/png/1555136612836.png)
 
 Run kind：选File；
 
@@ -739,7 +739,7 @@ Program arguments：用于指定程序启动参数：
 
 --kubeconfig指定kubeconfig文件所在全路径（即k8s集群master节点的/root/.kube/config），其指定k8s集群apiserver地址已经访问时的证书信息。
 
-![1555137161836](C:\Users\lenovo\AppData\Local\Temp\1555137161836.png)
+![1555137161836](./artifacts/png/1555137161836.png)
 
 --v指定glog日志级别，--v=5表示只输出info小于5和error、warn日志。
 
@@ -867,23 +867,23 @@ kubectl apply -f operator-manager.yaml
 
 启动两个operator-manager实例：
 
-![op1](C:\Users\lenovo\Pictures\op1.png)
+![op1](./artifacts/png/op1.png)
 
 可以看到只有一个实例operator-manager-86d785b5fc-m5rgh在同步事件，处理业务：
 
-![op2](C:\Users\lenovo\Pictures\op2.png)
+![op2](./artifacts/png/op2.png)
 
 operator-manager-86d785b5fc-sszj2实例一直在竞争尝试获取锁：
 
-![op3](C:\Users\lenovo\Pictures\op3.png)
+![op3](./artifacts/png/op3.png)
 
 删除掉正在同步事件的实例operator-manager-86d785b5fc-m5rgh：
 
-![op4](C:\Users\lenovo\Pictures\op4.png)
+![op4](./artifacts/png/op4.png)
 
 实例operator-manager-86d785b5fc-sszj2竞争获取到锁，开始处理业务逻辑：
 
-![op6](C:\Users\lenovo\Pictures\op6.png)
+![op6](./artifacts/png/op6.png)
 
 故可以通过反亲和性防止两个operator-manager实例调度到同一主机上，达到主备高可用。
 
