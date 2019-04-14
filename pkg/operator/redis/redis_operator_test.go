@@ -104,13 +104,6 @@ func TestIngoreCase(t *testing.T) {
 func TestAssignMasterSlaveIP(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.102.77-slave"
 	c := "10.10.103.155-build"
@@ -118,6 +111,10 @@ func TestAssignMasterSlaveIP(t *testing.T) {
 	e := "10.10.104.15-slave"
 	f := "10.10.105.14-slave"
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -149,7 +146,7 @@ func TestAssignMasterSlaveIP(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
@@ -202,7 +199,7 @@ func TestAssignMasterSlaveIP(t *testing.T) {
 			},
 		},
 	}
-	endpointAddresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, newEndpoints, oldEndpoints)
+	endpointAddresses, _ := rco.assignMasterSlaveIPAddress(newEndpoints, oldEndpoints)
 	masterIP, slaveIP, err = rco.assignMasterSlaveIP(endpointAddresses)
 	t.Logf("upgrade masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
@@ -232,13 +229,6 @@ func TestDeferErr(t *testing.T) {
 func TestCreateAssignMasterSlaveIP(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.102.77-slave"
 	c := "10.10.102.77-slave"
@@ -246,6 +236,10 @@ func TestCreateAssignMasterSlaveIP(t *testing.T) {
 	e := "10.10.103.155-build"
 	f := "10.10.103.152-slave"
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -279,7 +273,7 @@ func TestCreateAssignMasterSlaveIP(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+		addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("create masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 	}
@@ -288,15 +282,12 @@ func TestCreateAssignMasterSlaveIP(t *testing.T) {
 func TestCreateAssignMasterSlaveIPOneNode(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
+	a := "10.10.103.154-share"
+	endpoints := &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "kube-system",
 			Name:      "example000-redis-cluster",
 		},
-	}
-
-	a := "10.10.103.154-share"
-	endpoints := &v1.Endpoints{
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -331,7 +322,7 @@ func TestCreateAssignMasterSlaveIPOneNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
@@ -339,17 +330,14 @@ func TestCreateAssignMasterSlaveIPOneNode(t *testing.T) {
 func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	// 5a 1b
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -384,7 +372,7 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
@@ -424,7 +412,7 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.132.44 10.168.131.105 10.168.132.45]
 	//slaveIP: [10.168.33.66 10.168.33.67 10.168.9.134]
-	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(endpoints, nil)
 	masterIP, slaveIP, err = rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 
@@ -464,7 +452,7 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 
 	//masterIP: [10.168.131.105 10.168.132.44 10.168.132.45]
 	//slaveIP: [10.168.33.67 10.168.33.66 10.168.9.134]
-	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(endpoints, nil)
 	masterIP, slaveIP, err = rco.assignMasterSlaveIP(addresses)
 	t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
 }
@@ -472,19 +460,16 @@ func TestCreateAssignMasterSlaveIPTwoNode(t *testing.T) {
 func TestCreateAssignMasterSlaveIPThreeNode1(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-cc"
 
 	// 3a 2b 1c
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -516,7 +501,7 @@ func TestCreateAssignMasterSlaveIPThreeNode1(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -525,18 +510,15 @@ func TestCreateAssignMasterSlaveIPThreeNode1(t *testing.T) {
 func TestCreateAssignMasterSlaveIPThreeNode2(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-cc"
 	// 4a 1b 1c
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -568,7 +550,7 @@ func TestCreateAssignMasterSlaveIPThreeNode2(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -577,19 +559,16 @@ func TestCreateAssignMasterSlaveIPThreeNode2(t *testing.T) {
 func TestCreateAssignMasterSlaveIPThreeNode3(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-cc"
 
 	// 3a 2b 1c
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -621,7 +600,7 @@ func TestCreateAssignMasterSlaveIPThreeNode3(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -630,19 +609,16 @@ func TestCreateAssignMasterSlaveIPThreeNode3(t *testing.T) {
 func TestCreateAssignMasterSlaveIPThreeNode4(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-cc"
 
 	// 2a 2b 2c
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -674,7 +650,7 @@ func TestCreateAssignMasterSlaveIPThreeNode4(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -684,19 +660,16 @@ func TestCreateAssignMasterSlaveIPThreeNode4(t *testing.T) {
 func TestCreateAssignMasterSlaveIPThreeNode5(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-cc"
 
 	// 2a 3b 1c
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -728,7 +701,7 @@ func TestCreateAssignMasterSlaveIPThreeNode5(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -738,19 +711,16 @@ func TestCreateAssignMasterSlaveIPThreeNode5(t *testing.T) {
 func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-bb"
 	d := "10.10.103.154-cc"
 	// 3a 1b 1c 1d
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				Addresses: []v1.EndpointAddress{
@@ -782,7 +752,7 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -821,7 +791,7 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -860,7 +830,7 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ = rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ = rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -869,13 +839,6 @@ func TestCreateAssignMasterSlaveIPFourNode(t *testing.T) {
 func TestCreateAssignMasterSlaveIPFourNode1(t *testing.T) {
 	rco := &RedisClusterOperator{}
 
-	redisCluster := &v1alpha1.RedisCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "example000-redis-cluster",
-		},
-	}
-
 	a := "10.10.103.154-share"
 	b := "10.10.103.154-aa"
 	c := "10.10.103.154-bb"
@@ -883,6 +846,10 @@ func TestCreateAssignMasterSlaveIPFourNode1(t *testing.T) {
 
 	// 2a 2b 1c 1d
 	endpoints := &v1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "example000-redis-cluster",
+		},
 		Subsets: []v1.EndpointSubset{
 			{
 				// c ("10.168.131.105") d("10.168.132.44")
@@ -918,7 +885,7 @@ func TestCreateAssignMasterSlaveIPFourNode1(t *testing.T) {
 			},
 		},
 	}
-	addresses, _ := rco.assignMasterSlaveIPAddress(redisCluster, endpoints, nil)
+	addresses, _ := rco.assignMasterSlaveIPAddress(endpoints, nil)
 	for i := 10000; i > 0; i-- {
 		masterIP, slaveIP, err := rco.assignMasterSlaveIP(addresses)
 		t.Logf("masterIP: %v\nslaveIP: %v\nerror: %v", masterIP, slaveIP, err)
@@ -1158,4 +1125,40 @@ func TestRedisTribInfoReg(t *testing.T) {
 	for i, v := range submatch {
 		t.Log(i, " -->> ", v)
 	}
+}
+
+func TestChangeEndpoints(t *testing.T) {
+	endpoints := &v1.Endpoints{
+		Subsets: []v1.EndpointSubset{
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP: "10.168.131.105",
+						TargetRef: &v1.ObjectReference{
+							Name:      "pod3",
+							Namespace: "redis",
+						},
+					},
+					{
+						IP: "10.168.132.44",
+						TargetRef: &v1.ObjectReference{
+							Name:      "pod1",
+							Namespace: "redis",
+						},
+					},
+					{
+						IP: "10.168.132.45",
+						TargetRef: &v1.ObjectReference{
+							Name:      "pod2",
+							Namespace: "redis",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	sortEndpointsByPodName(endpoints)
+
+	t.Log(endpoints)
 }

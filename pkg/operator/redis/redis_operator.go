@@ -58,10 +58,12 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries            = 15
 	redisServicePort6379  = 6379
+	redisExporterPort9105 = 9105
 	redisServicePort16379 = 16379
 	pauseKey              = "pause.middleware.harmonycloud.cn"
 	defaultPipeline       = "10"
 	finalizersForeGround  = "Foreground"
+	redisContainerName    = "redis-cluster"
 )
 
 type handleClusterType int

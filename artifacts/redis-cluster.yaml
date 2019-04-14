@@ -48,28 +48,47 @@ spec:
         livenessProbe:
           exec:
             command:
-            - sh
-            - /data/health-check.sh
-          initialDelaySeconds: 20
-          periodSeconds: 10
+            - /bin/sh
+            - -c
+            - redis-cli -h ${POD_NAME} ping
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
           successThreshold: 1
-          failureThreshold: 3
-          timeoutSeconds: 10
+          timeoutSeconds: 5
         readinessProbe:
-          failureThreshold: 3
           exec:
             command:
-            - sh
-            - /data/health-check.sh
-          initialDelaySeconds: 20
-          periodSeconds: 10
+            - /bin/sh
+            - -c
+            - redis-cli -h ${POD_NAME} ping
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
           successThreshold: 1
-          timeoutSeconds: 10
+          timeoutSeconds: 5
         resources: {RedisCluster.spec.resource}
         volumeMounts:
         # 挂载data、log、config目录到共享存储，{集群域名、namespace可变}
         - mountPath: /nfs/redis/{RedisCluster.spec.pod.env.DOMAINNAME如cluster.local}/{RedisCluster.metadata.namespace}
           name: redis-data
+      - name: redis-exporter
+        image: 10.10.103.59/k8s-deploy/redis-exporter:v1
+        env:
+        - name: PODIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        command:
+        - /redis_exporter
+        - -redis.addr={PODIP}:6379
+        - -redis.password=""
+        - -web.listen-address=:9105
+        - -redis-only-metrics=true
+        - -redis.alias=rediscluster
+        ports:
+        - containerPort: 9105
+          protocol: TCP
       dnsPolicy: ClusterFirst
       initContainers:
       - command:

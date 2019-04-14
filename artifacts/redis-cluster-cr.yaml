@@ -5,7 +5,7 @@ metadata:
   namespace: kube-system
 spec:
   # 代表redis集群的个数
-  replicas: 7
+  replicas: 6
   # 代表是否进入维修状态
   pause: true
   # 是否删除crd以及redis集群
@@ -13,7 +13,7 @@ spec:
   # 镜像地址
   repository: library/redis
   # 镜像版本，便于后续多版本特化支持
-  version: 3.2.8
+  version: 3.2.6
   #redis集群升级策略
   updateStrategy:
     # 升级类型为AutoReceive（自动分配,不用AssignStrategies）, AssignReceive（指定值分配，需要用AssignStrategies）
@@ -38,8 +38,8 @@ spec:
       key: value
     # 环境变量管理
     env:
-    - name: tony
-      value: aa
+    - name: DOMAINNAME
+      value: cluster.local
     - name: MAXMEMORY
       value: 2gb    
     # 亲和性管理
@@ -68,15 +68,15 @@ spec:
     # 支持挂载形式： hostPath(不需要persistentVolumeClaimName)，nfs(需要persistentVolumeClaimName)
     volumes:
       type: nfs
-      persistentVolumeClaimName: pvcName
+      persistentVolumeClaimName: example000-redis-cluster-claim
     # 配置文件模板名
-    configmap: name
+    configmap: example000-redis-cluster-config
     # 监控镜像
-    monitorImage: string
+    monitorImage: redis-exporter:v1
     # 初始化镜像
-    initImage: string
+    initImage: redis-init:v1
     # 中间件容器镜像
-    middlewareImage: string
+    middlewareImage: redis-trib:3.2.6
 
 status:
   #当前statefulset replicas情况
