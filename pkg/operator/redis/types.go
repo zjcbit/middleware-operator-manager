@@ -1,11 +1,10 @@
 package redis
 
 const (
-	masterFlagType            string = "master"
-	slaveFlagType             string = "slave"
-	clusterStatusOK                  = "cluster_state:ok"
-	clusterKnownNodesOnlySelf        = "cluster_known_nodes:1"
-	clusterStateFailed               = "cluster state failed"
+	masterFlagType     string = "master"
+	slaveFlagType      string = "slave"
+	clusterStatusOK           = "cluster_state:ok"
+	clusterStateFailed        = "cluster state failed"
 )
 
 /*

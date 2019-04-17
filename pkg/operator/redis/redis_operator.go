@@ -47,6 +47,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/controller"
 	"reflect"
+	"runtime/debug"
 	"time"
 )
 
@@ -192,10 +193,10 @@ func (rco *RedisClusterOperator) updateRedisCluster(old, cur interface{}) {
 	oldR := old.(*redistype.RedisCluster)
 	curR := cur.(*redistype.RedisCluster)
 
-	/*if curR.ResourceVersion == oldR.ResourceVersion {
-		glog.V(4).Infof("%s/%s: skip same ResourceVersion: %s", curR.Namespace, curR.Name, curR.ResourceVersion)
-		return
-	}*/
+	if curR.ResourceVersion == oldR.ResourceVersion {
+		glog.V(4).Infof("same %s/%s ResourceVersion: %s", curR.Namespace, curR.Name, curR.ResourceVersion)
+		//return
+	}
 
 	glog.V(4).Infof("Updating RedisCluster %s", oldR.Name)
 	rco.enqueueRedisCluster(curR)
@@ -429,6 +430,8 @@ func (rco *RedisClusterOperator) syncRedisCluster(key string) (err error) {
 		if err := recover(); err != nil {
 			// 这里的err其实就是panic传入的内容
 			glog.Errorf("recover panic error: %v", err)
+			//打印堆栈
+			debug.PrintStack()
 		}
 	}()
 
@@ -445,6 +448,8 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	// TODO: Deep-copy only when needed.
 	redisCluster := rc.DeepCopy()
 
+	glog.V(4).Infof("Started syncing redisCluster: %v/%v ResourceVersion: %v", namespace, name, redisCluster.ResourceVersion)
+
 	//_, err = rco.redisClusterInformer.GetIndexer().
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("RedisCluster %v/%v has been deleted", namespace, name)
@@ -453,10 +458,6 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	if err != nil {
 		return err
 	}
-
-	/*rc, _ := json.Marshal(redisCluster)
-
-	glog.V(4).Infof("** RedisCluster: %v", string(rc))*/
 
 	//1、取到redisCluster对象，开始判断是否是第一次创建，用redisCluster.namespaces和redisCluster.name绑定statefulset
 
@@ -529,14 +530,23 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		err = rco.createAndInitRedisCluster(newRedisCluster)
 	//升级集群
 	case upgradeCluster:
+		//策略类型错误
+		updateType := redisCluster.Spec.UpdateStrategy.Type
+		if updateType != redistype.AssignReceiveStrategyType && updateType != redistype.AutoReceiveStrategyType {
+			err := fmt.Errorf("upgrade redis cluster: %v/%v UpdateStrategy Type error: %v", redisCluster.Namespace, redisCluster.Name, updateType)
+			glog.Error(err.Error())
+			rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterRunning, err.Error())
+			return nil
+		}
+
 		//卡槽分配策略手动,但分配详情有误
 		strategiesLen := int32(len(redisCluster.Spec.UpdateStrategy.AssignStrategies))
 		scaleLen := *redisCluster.Spec.Replicas - *existSts.Spec.Replicas
-		if (redisCluster.Spec.UpdateStrategy.Type == redistype.AssignReceiveStrategyType) && strategiesLen != (scaleLen/2) {
+		if (updateType == redistype.AssignReceiveStrategyType) && strategiesLen != (scaleLen/2) {
 			err := fmt.Errorf("upgrade redis cluster: %v/%v slots AssignStrategies error", redisCluster.Namespace, redisCluster.Name)
 			glog.Error(err.Error())
 			rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterRunning, err.Error())
-			return err
+			return nil
 		}
 
 		//更新状态为Scaling

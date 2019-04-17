@@ -28,13 +28,25 @@ func (rco *RedisClusterOperator) execClusterInfo(clusterInstanceIp, podName, nam
 	glog.Infof("clusterInfoCmd stdout: %v -- stderr: %v -- error: %v ", stdout, stderr, err)
 
 	if err != nil || stderr != "" {
-		err := fmt.Errorf("exec cluster nodes Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", clusterInfoCmd, stdout, stderr, err)
+		err := fmt.Errorf("exec cluster info Command: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", clusterInfoCmd, stdout, stderr, err)
 		glog.Errorf(err.Error())
 		return false, false, err
 	}
 
 	isOK := strings.Contains(stdout, clusterStatusOK)
-	isOnlyKnownSelf := strings.Contains(stdout, clusterKnownNodesOnlySelf)
+
+	subMatches := clusterInfoReg.FindStringSubmatch(stdout)
+	if len(subMatches) != 2 {
+		err := fmt.Errorf("cluster info by podName: %v/%v match cluster_known_nodes error. stdout: %v\n", namespace, podName, stdout)
+		glog.Errorf(err.Error())
+		return false, false, err
+	}
+
+	isOnlyKnownSelf := false
+	if subMatches[1] == "1" {
+		isOnlyKnownSelf = true
+	}
+
 	return isOK, isOnlyKnownSelf, nil
 }
 
@@ -707,7 +719,6 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 		}
 	}
 
-	glog.Warningf("-----------redisCluster: %#v--", redisCluster)
 	containerEnv = append(containerEnv, redisCluster.Spec.Pod[0].Env...)
 	flagTrue := true
 	recSts := &appsv1.StatefulSet{
@@ -801,7 +812,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 							},
 						},
 						{
-							Command:         []string{"/redis_exporter", "-redis.addr={PODIP}:6379", "-redis.password=", "-web.listen-address=:9105", "-redis-only-metrics=true", fmt.Sprintf("-redis.alias=%v", redisContainerName)},
+							Command:         []string{"/redis_exporter", "-redis.addr=$(PODIP):6379", "-redis.password=", "-web.listen-address=:9105", "-redis-only-metrics=true", fmt.Sprintf("-redis.alias=%v", redisContainerName)},
 							Image:           redisCluster.Spec.Repository + redisCluster.Spec.Pod[0].MonitorImage,
 							ImagePullPolicy: v1.PullAlways,
 							Env:             containerEnv,
@@ -1064,10 +1075,14 @@ func (rco *RedisClusterOperator) reshareRedisClusterSlotsToMasterNode(assignStra
 func (rco *RedisClusterOperator) waitRedisStatusOK(existInstanceIp, podName, namespace string) error {
 	f := wait.ConditionFunc(func() (bool, error) {
 
-		err := rco.execCheckRedisCluster(existInstanceIp, podName, namespace)
+		isOK, err := rco.execCheckRedisCluster(existInstanceIp, podName, namespace)
 
 		if err != nil {
 			return false, fmt.Errorf("check redis cluster is error: %v", err)
+		}
+
+		if !isOK {
+			return false, nil
 		}
 
 		return true, nil
@@ -1086,60 +1101,27 @@ func (rco *RedisClusterOperator) waitRedisStatusOK(existInstanceIp, podName, nam
 	return nil
 }
 
-// master、slave IP分配,直到和故障之前的分配方式一样
-//addresses：需要分配master、slave IP的address信息
-//expectedConnector：期望的master、slave IP绑定关系
-func (rco *RedisClusterOperator) waitExpectMasterSlaveIPAssign(addresses []v1.EndpointAddress, expectedConnector map[string]string) (masterInstanceIPs []string, slaveInstanceIPs []string, err error) {
-	f := wait.ConditionFunc(func() (bool, error) {
-
-		masterInstanceIPs, slaveInstanceIPs, err = rco.assignMasterSlaveIP(addresses)
-
-		if err != nil {
-			return false, fmt.Errorf("assign master slave IP is error: %v", err)
-		}
-
-		for i, masterIp := range masterInstanceIPs {
-			if slaveIp, ok := expectedConnector[masterIp]; ok {
-				if slaveIp != slaveInstanceIPs[i] {
-					//不符合期望,继续分配
-					return false, nil
-				}
-			}
-		}
-
-		//符合期望执行后续逻辑
-		return true, nil
-	})
-
-	timeout := rco.options.ClusterTimeOut
-	//1s check一次,看IP分配是否符合期望,if return true,开始执行后续逻辑;
-	// 否则继续检查,总共time.Duration(timeout)分钟后超时
-	err = wait.Poll(1*time.Second, time.Duration(timeout)*time.Minute, f)
-	if err != nil || err == wait.ErrWaitTimeout {
-		//IP分配一直不符合期望-->>超时
-		err := fmt.Errorf("assign master slave IP error: %v", err)
-		glog.Errorf(err.Error())
-		return nil, nil, err
-	}
-	return masterInstanceIPs, slaveInstanceIPs, nil
-}
-
 //检查redis集群状态
 //existInstanceIp：redis集群中的一个实例IP
 //podName：pod实例中的一个podName,不一定已经加入redis集群
 //namespace：redis集群所在的ns
-func (rco *RedisClusterOperator) execCheckRedisCluster(existInstanceIp, podName, namespace string) error {
+func (rco *RedisClusterOperator) execCheckRedisCluster(existInstanceIp, podName, namespace string) (bool, error) {
 	checkCmd := fmt.Sprintf(" redis-trib.rb check %v:6379 ", existInstanceIp)
 	commandCheck := []string{"/bin/sh", "-c", checkCmd}
 	stdout, stderr, err := rco.ExecToPodThroughAPI(commandCheck, redisContainerName, podName, namespace, nil)
 
-	if err != nil || stderr != "" || strings.Contains(stdout, "[ERR]") {
+	if err != nil || stderr != "" {
 		err := fmt.Errorf("redisClusterInstance: %v/%v -- checkCmd: %v\n -- stdout: %v\n -- stderr: %v\n -- error: %v", namespace, podName, commandCheck, stdout, stderr, err)
 		glog.Errorf(err.Error())
-		return err
+		return false, err
 	}
+
+	if strings.Contains(stdout, "[ERR]") {
+		return false, nil
+	}
+
 	glog.V(4).Infof("redisClusterInstance: %v/%v checkCmd: %v \n -- \nstdout: %v", namespace, podName, commandCheck, stdout)
-	return nil
+	return true, nil
 }
 
 //获取当前redisCluster实例信息,和新加的节点master和slave信息

@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-const debug = false
+const isDebug = false
 
 // ExecToPodThroughAPI uninterractively exec to the pod with the command specified.
 // :param string command: list of the str which specify the command.
@@ -45,7 +45,7 @@ func (rco *RedisClusterOperator) ExecToPodThroughAPI(command []string, container
 		TTY:       false,
 	}, parameterCodec)
 
-	if debug {
+	if isDebug {
 		fmt.Println("Request URL:", req.URL().String())
 	}
 

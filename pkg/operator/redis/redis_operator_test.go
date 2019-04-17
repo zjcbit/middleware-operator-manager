@@ -3,7 +3,6 @@ package redis
 import (
 	"errors"
 	"fmt"
-	"harmonycloud.cn/middleware-operator-manager/cmd/operator-manager/app/options"
 	"harmonycloud.cn/middleware-operator-manager/pkg/apis/redis/v1alpha1"
 	"harmonycloud.cn/middleware-operator-manager/util"
 	"k8s.io/api/core/v1"
@@ -1053,63 +1052,6 @@ func TestDeepEqualExcludeFiled(t *testing.T) {
 
 }
 
-func TestAssignIP(t *testing.T) {
-	rco := &RedisClusterOperator{}
-
-	op := &options.OperatorManagerServer{
-		OperatorManagerConfig: v1alpha1.OperatorManagerConfig{
-			ClusterTimeOut: 3,
-		},
-	}
-
-	rco.options = op
-
-	a := "10.10.103.154-share"
-	b := "10.10.103.154-aa"
-	c := "10.10.103.154-cc"
-
-	// 2a 2b 2c
-	endpoints := &v1.Endpoints{
-		Subsets: []v1.EndpointSubset{
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.168.131.105",
-						NodeName: &a,
-					},
-					{
-						IP:       "10.168.132.44",
-						NodeName: &c,
-					},
-					{
-						IP:       "10.168.132.45",
-						NodeName: &b,
-					},
-					{
-						IP:       "10.168.33.66",
-						NodeName: &a,
-					},
-					{
-						IP:       "10.168.33.67",
-						NodeName: &c,
-					},
-					{
-						IP:       "10.168.9.134",
-						NodeName: &b,
-					},
-				},
-			},
-		},
-	}
-
-	expectedConnector := make(map[string]string)
-	expectedConnector["10.168.132.45"] = "10.168.33.67"
-
-	masterInstanceIPs, slaveInstanceIPs, err := rco.waitExpectMasterSlaveIPAssign(endpoints.Subsets[0].Addresses, expectedConnector)
-
-	t.Logf("masterInstanceIPs: %v ; slaveInstanceIPs: %v ; error: %v", masterInstanceIPs, slaveInstanceIPs, err)
-}
-
 func TestRedisTribInfoReg(t *testing.T) {
 	reg := `([\d.]+):6379 \((\w+)...\) -> (\d+) keys \| (\d+) slots \| (\d+) slaves`
 	infos := `10.168.33.80:6379 (9ffde2b6...) -> 0 keys | 5461 slots | 1 slaves.
@@ -1161,4 +1103,83 @@ func TestChangeEndpoints(t *testing.T) {
 	sortEndpointsByPodName(endpoints)
 
 	t.Log(endpoints)
+}
+
+func TestComposeMasterSlaveIP(t *testing.T) {
+
+	nodeName0 := "10.10.103.66-share"
+	nodeName1 := "10.10.103.60-master"
+	nodeName2 := "10.10.102.43-share"
+	nodeName3 := "10.10.103.61-slave"
+	nodeName4 := "10.10.103.66-share"
+	nodeName5 := "10.10.103.60-master"
+	nodeName6 := "10.10.103.66-share"
+	nodeName7 := "10.10.102.43-share"
+	nodeName8 := "10.10.103.66-share"
+	nodeName9 := "10.10.103.60-master"
+
+	newAddresses := []v1.EndpointAddress{
+		{
+			IP:       "10.168.7.224",
+			Hostname: "example000-redis-cluster-0",
+			NodeName: &nodeName0,
+		},
+		{
+			IP:       "10.168.131.69",
+			Hostname: "example000-redis-cluster-1",
+			NodeName: &nodeName1,
+		},
+		{
+			IP:       "10.168.167.89",
+			Hostname: "example000-redis-cluster-2",
+			NodeName: &nodeName2,
+		},
+		{
+			IP:       "10.168.246.107",
+			Hostname: "example000-redis-cluster-3",
+			NodeName: &nodeName3,
+		},
+		{
+			IP:       "10.168.7.227",
+			Hostname: "example000-redis-cluster-4",
+			NodeName: &nodeName4,
+		},
+		{
+			IP:       "10.168.131.70",
+			Hostname: "example000-redis-cluster-5",
+			NodeName: &nodeName5,
+		},
+		{
+			IP:       "10.168.7.229",
+			Hostname: "example000-redis-cluster-6",
+			NodeName: &nodeName6,
+		},
+		{
+			IP:       "10.168.167.90",
+			Hostname: "example000-redis-cluster-7",
+			NodeName: &nodeName7,
+		},
+		{
+			IP:       "10.168.7.193",
+			Hostname: "example000-redis-cluster-8",
+			NodeName: &nodeName8,
+		},
+		{
+			IP:       "10.168.131.75",
+			Hostname: "example000-redis-cluster-9",
+			NodeName: &nodeName9,
+		},
+	}
+
+	existedMasterInstanceIPs := []string{"10.168.167.89", "10.168.131.69", "10.168.246.107"}
+	existedSlaveInstanceIPs := []string{"10.168.131.70", "10.168.7.227", "10.168.7.224"}
+
+	masterSlaveConnector := make(map[string]string, 3)
+	masterSlaveConnector["10.168.167.89"] = "10.168.131.70"
+	masterSlaveConnector["10.168.131.69"] = "10.168.7.227"
+	masterSlaveConnector["10.168.246.107"] = "10.168.7.224"
+
+	willAddClusterMasterIPs, willAddClusterSlaveIPs, slaveParentIps, err := composeMasterSlaveIP(newAddresses, existedMasterInstanceIPs, existedSlaveInstanceIPs, masterSlaveConnector)
+
+	t.Logf("\nwillAddClusterMasterIPs: %v \nwillAddClusterSlaveIPs: %v \nslaveParentIps: %v \nerr: %v\n", willAddClusterMasterIPs, willAddClusterSlaveIPs, slaveParentIps, err)
 }
