@@ -463,11 +463,7 @@ func composeMasterSlaveIP(newAddresses []v1.EndpointAddress, existedMasterInstan
 	//分配master
 	var willAddClusterMasterAddr []v1.EndpointAddress
 
-	tempWillAddClusterAddr := make([]v1.EndpointAddress, len(willAddClusterAddr))
-
-	copy(tempWillAddClusterAddr, willAddClusterAddr)
-
-	for i, tempWillAddr := range tempWillAddClusterAddr {
+	for i := 0; i < len(willAddClusterAddr); {
 
 		if len(willAddClusterMasterAddr) == willAssignMasterCount {
 			break
@@ -475,19 +471,20 @@ func composeMasterSlaveIP(newAddresses []v1.EndpointAddress, existedMasterInstan
 
 		isSameNode := false
 		for _, existAddr := range existMasterAddr {
-			if *existAddr.NodeName == *tempWillAddr.NodeName {
+			if *existAddr.NodeName == *willAddClusterAddr[i].NodeName {
 				isSameNode = true
 				break
 			}
 		}
 
 		if isSameNode {
+			i++
 			continue
 		}
 
 		//找到不同node的addr ip
-		willAddClusterMasterAddr = append(willAddClusterMasterAddr, tempWillAddr)
-		existMasterAddr = append(existMasterAddr, tempWillAddr)
+		willAddClusterMasterAddr = append(willAddClusterMasterAddr, willAddClusterAddr[i])
+		existMasterAddr = append(existMasterAddr, willAddClusterAddr[i])
 		willAddClusterAddr = append(willAddClusterAddr[:i], willAddClusterAddr[i+1:]...)
 	}
 

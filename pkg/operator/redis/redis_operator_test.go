@@ -1183,3 +1183,86 @@ func TestComposeMasterSlaveIP(t *testing.T) {
 
 	t.Logf("\nwillAddClusterMasterIPs: %v \nwillAddClusterSlaveIPs: %v \nslaveParentIps: %v \nerr: %v\n", willAddClusterMasterIPs, willAddClusterSlaveIPs, slaveParentIps, err)
 }
+
+func TestComposeMasterSlaveIP1(t *testing.T) {
+
+	nodeName0 := "vm-3"
+	nodeName1 := "vm-6"
+	nodeName2 := "vm-1"
+	nodeName3 := "vm-4"
+	nodeName4 := "vm-2"
+	nodeName5 := "vm-6"
+	nodeName6 := "vm-1"
+	nodeName7 := "vm-3"
+	nodeName8 := "vm-4"
+	nodeName9 := "vm-6"
+
+	newAddresses := []v1.EndpointAddress{
+		{
+			IP:       "10.168.8.87",
+			Hostname: "example000-redis-cluster-0",
+			NodeName: &nodeName0,
+		},
+		{
+			IP:       "10.168.175.255",
+			Hostname: "example000-redis-cluster-1",
+			NodeName: &nodeName1,
+		},
+		{
+			IP:       "10.168.177.180",
+			Hostname: "example000-redis-cluster-2",
+			NodeName: &nodeName2,
+		},
+		{
+			IP:       "10.168.173.5",
+			Hostname: "example000-redis-cluster-3",
+			NodeName: &nodeName3,
+		},
+		{
+			IP:       "10.168.12.245",
+			Hostname: "example000-redis-cluster-4",
+			NodeName: &nodeName4,
+		},
+		{
+			IP:       "10.168.175.196",
+			Hostname: "example000-redis-cluster-5",
+			NodeName: &nodeName5,
+		},
+		{
+			IP:       "10.168.177.153",
+			Hostname: "example000-redis-cluster-6",
+			NodeName: &nodeName6,
+		},
+		{
+			IP:       "10.168.8.75",
+			Hostname: "example000-redis-cluster-7",
+			NodeName: &nodeName7,
+		},
+		{
+			IP:       "10.168.173.52",
+			Hostname: "example000-redis-cluster-8",
+			NodeName: &nodeName8,
+		},
+		{
+			IP:       "10.168.175.195",
+			Hostname: "example000-redis-cluster-9",
+			NodeName: &nodeName9,
+		},
+	}
+
+	existedMasterInstanceIPs := []string{"10.168.177.180", "10.168.12.245", "10.168.8.87"}
+	existedSlaveInstanceIPs := []string{"10.168.175.255", "10.168.175.196", "10.168.173.5"}
+
+	masterSlaveConnector := make(map[string]string, 3)
+	masterSlaveConnector["10.168.177.180"] = "10.168.175.255"
+	masterSlaveConnector["10.168.12.245"] = "10.168.175.196"
+	masterSlaveConnector["10.168.8.87"] = "10.168.173.5"
+
+	willAddClusterMasterIPs, willAddClusterSlaveIPs, slaveParentIps, err := composeMasterSlaveIP(newAddresses, existedMasterInstanceIPs, existedSlaveInstanceIPs, masterSlaveConnector)
+
+	//master:["10.168.173.52","10.168.175.195"]
+	//slave:["10.168.177.153","10.168.8.75"]
+	//parent:["10.168.173.52","10.168.175.195"]
+
+	t.Logf("\nwillAddClusterMasterIPs: %v \nwillAddClusterSlaveIPs: %v \nslaveParentIps: %v \nerr: %v\n", willAddClusterMasterIPs, willAddClusterSlaveIPs, slaveParentIps, err)
+}
