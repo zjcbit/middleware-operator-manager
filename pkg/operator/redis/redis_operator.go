@@ -448,8 +448,6 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	// TODO: Deep-copy only when needed.
 	redisCluster := rc.DeepCopy()
 
-	glog.V(4).Infof("Started syncing redisCluster: %v/%v ResourceVersion: %v", namespace, name, redisCluster.ResourceVersion)
-
 	//_, err = rco.redisClusterInformer.GetIndexer().
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("RedisCluster %v/%v has been deleted", namespace, name)
@@ -458,6 +456,8 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	if err != nil {
 		return err
 	}
+
+	glog.V(4).Infof("Started syncing redisCluster: %v/%v ResourceVersion: %v", namespace, name, redisCluster.ResourceVersion)
 
 	//1、取到redisCluster对象，开始判断是否是第一次创建，用redisCluster.namespaces和redisCluster.name绑定statefulset
 
