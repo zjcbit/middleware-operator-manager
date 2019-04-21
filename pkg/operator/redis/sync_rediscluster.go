@@ -201,7 +201,7 @@ func (rco *RedisClusterOperator) createAndInitRedisCluster(redisCluster *redisty
 		return err
 	}
 
-	if endpoints.Subsets == nil {
+	if endpoints == nil || len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
 		return fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", redisCluster.Namespace, redisCluster.Name)
 	}
 
@@ -363,6 +363,17 @@ func (rco *RedisClusterOperator) checkPodInstanceIsReadyByEndpoint(redisCluster 
 		endpoints, err = rco.defaultClient.CoreV1().Endpoints(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, fmt.Errorf("get redis cluster endpoint is error: %v", err)
+		}
+
+		if endpoints.Subsets == nil {
+			sts, err := rco.stsLister.StatefulSets(redisCluster.Namespace).Get(redisCluster.Name)
+			if err != nil {
+				return false, fmt.Errorf("get redis cluster StatefulSets: %v/%v is error: %v", redisCluster.Namespace, redisCluster.Name, err)
+			}
+			if sts == nil || *sts.Spec.Replicas == 0 {
+				return false, fmt.Errorf("redis cluster StatefulSets: %v/%v is not exist or Spec.Replicas is 0", redisCluster.Namespace, redisCluster.Name)
+			}
+			return false, nil
 		}
 
 		if len(endpoints.Subsets) == 0 {
@@ -710,16 +721,22 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 		},
 	}
 
+	podTpl := redisCluster.Spec.Pod[0]
 	//取环境变量里的DOMAINNAME
 	var k8sClusterDomainName string
-	for _, env := range redisCluster.Spec.Pod[0].Env {
+	for _, env := range podTpl.Env {
 		if env.Name == "DOMAINNAME" {
 			k8sClusterDomainName = env.Value
 			break
 		}
 	}
 
-	containerEnv = append(containerEnv, redisCluster.Spec.Pod[0].Env...)
+	containerEnv = append(containerEnv, podTpl.Env...)
+	podLabels := podTpl.Labels
+	if podLabels == nil {
+		podLabels = make(map[string]string, 1)
+	}
+	podLabels["app"] = name
 	flagTrue := true
 	recSts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -745,7 +762,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			UpdateStrategy:       redisCluster.Spec.Pod[0].UpdateStrategy,
+			UpdateStrategy:       podTpl.UpdateStrategy,
 			Replicas:             redisCluster.Spec.Replicas,
 			RevisionHistoryLimit: &revisionHistoryLimit,
 			Selector: &metav1.LabelSelector{
@@ -757,15 +774,14 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 			ServiceName: redisCluster.Name,
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": name,
-					},
+					Labels:      podLabels,
+					Annotations: podTpl.Annotations,
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
 							Command:         []string{"/bin/redis-server", fmt.Sprintf("/nfs/redis/%v/%v/$(POD_NAME)/config/redis.conf", k8sClusterDomainName, namespace)},
-							Image:           redisCluster.Spec.Repository + redisCluster.Spec.Pod[0].MiddlewareImage,
+							Image:           redisCluster.Spec.Repository + podTpl.MiddlewareImage,
 							ImagePullPolicy: v1.PullAlways,
 							Env:             containerEnv,
 							Name:            redisContainerName,
@@ -803,7 +819,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 								SuccessThreshold:    int32(1),
 								FailureThreshold:    int32(3),
 							},
-							Resources: redisCluster.Spec.Pod[0].Resources,
+							Resources: podTpl.Resources,
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "redis-data",
@@ -813,7 +829,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 						},
 						{
 							Command:         []string{"/redis_exporter", "-redis.addr=$(PODIP):6379", "-redis.password=", "-web.listen-address=:9105", "-redis-only-metrics=true", fmt.Sprintf("-redis.alias=%v", redisContainerName)},
-							Image:           redisCluster.Spec.Repository + redisCluster.Spec.Pod[0].MonitorImage,
+							Image:           redisCluster.Spec.Repository + podTpl.MonitorImage,
 							ImagePullPolicy: v1.PullAlways,
 							Env:             containerEnv,
 							Name:            "redis-exporter",
@@ -829,7 +845,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 					InitContainers: []v1.Container{
 						{
 							Command:         []string{"/bin/sh", "-c", "sh /init.sh"},
-							Image:           redisCluster.Spec.Repository + redisCluster.Spec.Pod[0].InitImage,
+							Image:           redisCluster.Spec.Repository + podTpl.InitImage,
 							ImagePullPolicy: v1.PullAlways,
 							Env:             containerEnv,
 							Name:            redisCluster.Name + "-init",
@@ -858,6 +874,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 						},
 					},
 					RestartPolicy: v1.RestartPolicyAlways,
+					Affinity:      podTpl.Affinity,
 					//TODO modify
 					/*NodeSelector: map[string]string{
 						"kubernetes.io/hostname": "10.10.103.61-slave",
@@ -878,7 +895,7 @@ func (rco *RedisClusterOperator) buildRedisClusterStatefulset(namespace, name st
 							Name: "redis-data",
 							VolumeSource: v1.VolumeSource{
 								PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-									ClaimName: redisCluster.Spec.Pod[0].Volumes.PersistentVolumeClaimName,
+									ClaimName: podTpl.Volumes.PersistentVolumeClaimName,
 								},
 							},
 						},
@@ -1237,6 +1254,10 @@ func (rco *RedisClusterOperator) dropRedisCluster(redisCluster *redistype.RedisC
 //addresses：需要划分master、slave IP的address集合
 func (rco *RedisClusterOperator) assignMasterSlaveIP(addresses []v1.EndpointAddress) ([]string, []string, error) {
 
+	if len(addresses) == 0 {
+		return nil, nil, fmt.Errorf("create redisCluster endpoints addresses is empty")
+	}
+
 	//key: nodeName value: ips
 	nodeIPs := make(map[string][]v1.EndpointAddress)
 	for _, addr := range addresses {
@@ -1407,7 +1428,17 @@ func (rco *RedisClusterOperator) assignMasterSlaveIPAddress(endpoints *v1.Endpoi
 
 //根据podName从小到大排序endpoints
 func sortEndpointsByPodName(endpoints ...*v1.Endpoints) {
+
+	if len(endpoints) == 0 {
+		return
+	}
+
 	for _, endpoint := range endpoints {
+
+		if endpoint == nil || len(endpoint.Subsets) == 0 {
+			return
+		}
+
 		addresses := endpoint.Subsets[0].Addresses
 		sort.SliceStable(addresses, func(i, j int) bool {
 			name1 := addresses[i].TargetRef.Name
@@ -1416,10 +1447,3 @@ func sortEndpointsByPodName(endpoints ...*v1.Endpoints) {
 		})
 	}
 }
-
-/*
-TODO 异常场景下的处理，包括：
-1、升级时redis集群异常中断；
-2、正在创建升级时redisCluster挂掉后恢复；
-3、pod在指定时间内没起来，创建或者升级超时，后来起来了，怎么继续创建或升级
-*/

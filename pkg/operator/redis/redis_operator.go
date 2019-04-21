@@ -443,12 +443,6 @@ func (rco *RedisClusterOperator) syncRedisCluster(key string) (err error) {
 func (rco *RedisClusterOperator) sync(namespace, name string) error {
 
 	rc, err := rco.redisClusterLister.RedisClusters(namespace).Get(name)
-
-	// Deep-copy otherwise we are mutating our cache.
-	// TODO: Deep-copy only when needed.
-	redisCluster := rc.DeepCopy()
-
-	//_, err = rco.redisClusterInformer.GetIndexer().
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("RedisCluster %v/%v has been deleted", namespace, name)
 		return nil
@@ -456,6 +450,10 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	if err != nil {
 		return err
 	}
+
+	// Deep-copy otherwise we are mutating our cache.
+	// TODO: Deep-copy only when needed.
+	redisCluster := rc.DeepCopy()
 
 	glog.V(4).Infof("Started syncing redisCluster: %v/%v ResourceVersion: %v", namespace, name, redisCluster.ResourceVersion)
 
@@ -480,7 +478,7 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 	if err != nil {
 		glog.Errorf("get cluster statefulset: %v/%v is error: %v", namespace, name, err)
 		return err
-	} else if existSts == nil {
+	} else if existSts == nil || existSts.Status.Replicas == 0 {
 		glog.V(2).Infof("RedisCluster %v/%v has been create firstly, will create and init redis cluster", namespace, name)
 		handleFlag = createCluster
 	} else {
@@ -519,15 +517,22 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		}
 
 		recSts := rco.buildRedisClusterStatefulset(namespace, name, newRedisCluster)
-		//create statefulset
-		sts, err := rco.defaultClient.AppsV1().StatefulSets(namespace).Create(recSts)
+
+		var sts *appsv1.StatefulSet
+		if existSts == nil {
+			// create when statefulset is not exist
+			sts, err = rco.defaultClient.AppsV1().StatefulSets(namespace).Create(recSts)
+		} else {
+			// update when statefulset Replicas is 0
+			sts, err = rco.defaultClient.AppsV1().StatefulSets(namespace).Update(recSts)
+		}
 
 		if err != nil {
 			return fmt.Errorf("init redis cluster create statefulset: %v is error: %v", sts.Name, err)
 		}
 
 		//检测endpoint pod都ready,则创建和初始化集群
-		err = rco.createAndInitRedisCluster(newRedisCluster)
+		return rco.createAndInitRedisCluster(newRedisCluster)
 	//升级集群
 	case upgradeCluster:
 		//策略类型错误
@@ -572,15 +577,17 @@ func (rco *RedisClusterOperator) sync(namespace, name string) error {
 		}
 
 		//检测endpoint pod都ready,则升级扩容集群
-		err = rco.upgradeRedisCluster(newRedisCluster, oldEndpoints)
+		return rco.upgradeRedisCluster(newRedisCluster, oldEndpoints)
 	//删除集群
 	case dropCluster:
 		//更新状态为Deleting
-		newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterDeleting, "")
+		/*newRedisCluster, err := rco.updateRedisClusterStatus(redisCluster, nil, redistype.RedisClusterDeleting, "")
 		if err != nil {
 			return err
 		}
-		err = rco.dropRedisCluster(newRedisCluster)
+		err = rco.dropRedisCluster(newRedisCluster)*/
+		glog.Error("RedisCluster crd delete not reachable")
+		return nil
 	default:
 		glog.Error("RedisCluster crd Error.")
 	}

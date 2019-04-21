@@ -81,7 +81,7 @@ spec:
               fieldPath: status.podIP
         command:
         - /redis_exporter
-        - -redis.addr={PODIP}:6379
+        - -redis.addr=$(PODIP):6379
         - -redis.password=""
         - -web.listen-address=:9105
         - -redis-only-metrics=true

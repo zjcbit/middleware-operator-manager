@@ -18,21 +18,24 @@ var clusterInfoReg = regexp.MustCompile(`cluster_known_nodes:(\d+)`)
 
 //检查集群状态
 //redisCluster：redisCluster对象
-func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *redistype.RedisCluster) error {
+func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(latestRedisCluster *redistype.RedisCluster) error {
 
 	// 检查集群状态总是获取最新的redisCluster对象,从缓存中获取的不一定是最新的
-	latestRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
+	/*latestRedisCluster, err := rco.customCRDClient.CrV1alpha1().RedisClusters(redisCluster.Namespace).Get(redisCluster.Name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("checkAndUpdateRedisClusterStatus get latest RedisCluster: %v/%v error: %v", redisCluster.Namespace, redisCluster.Name, err)
-	}
+	}*/
 
-	glog.V(4).Infof("Started check redisCluster: %v/%v ResourceVersion: %v", redisCluster.Namespace, redisCluster.Name, redisCluster.ResourceVersion)
+	//TODO 状态为Running时，可能只有部分节点形成集群
 
-	if latestRedisCluster.Status.Phase == redistype.RedisClusterRunning ||
+	glog.V(4).Infof("Started check redisCluster: %v/%v ResourceVersion: %v", latestRedisCluster.Namespace, latestRedisCluster.Name, latestRedisCluster.ResourceVersion)
+
+	if (latestRedisCluster.Status.Phase == redistype.RedisClusterRunning &&
+		int32(len(latestRedisCluster.Status.Conditions)) == *latestRedisCluster.Spec.Replicas) ||
 		(latestRedisCluster.Status.Phase == redistype.RedisClusterUpgrading &&
-			int32(len(latestRedisCluster.Status.Conditions)) == latestRedisCluster.Status.Replicas) ||
+			int32(len(latestRedisCluster.Status.Conditions)) == *latestRedisCluster.Spec.Replicas) ||
 		(latestRedisCluster.Status.Phase == redistype.RedisClusterCreating &&
-			int32(len(latestRedisCluster.Status.Conditions)) == latestRedisCluster.Status.Replicas) {
+			int32(len(latestRedisCluster.Status.Conditions)) == *latestRedisCluster.Spec.Replicas) {
 
 		endpoints, err := rco.defaultClient.CoreV1().Endpoints(latestRedisCluster.Namespace).Get(latestRedisCluster.GetName(), metav1.GetOptions{})
 
@@ -40,8 +43,8 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 			return fmt.Errorf("get redis cluster endpoint is error: %v", err)
 		}
 
-		if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
-			return fmt.Errorf("redis cluster endpoint: %v is blank", endpoints)
+		if endpoints == nil || len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
+			return fmt.Errorf("redis cluster endpoint: %v/%v is blank", endpoints.Namespace, endpoints.Name)
 		}
 
 		sortEndpointsByPodName(endpoints)
@@ -72,17 +75,17 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 	//这里将阻塞
 	endpoints, err := rco.checkPodInstanceIsReadyByEndpoint(latestRedisCluster)
 
-	sortEndpointsByPodName(endpoints)
-
 	if err != nil {
 		//更新状态为Failing
 		rco.updateRedisClusterStatus(latestRedisCluster, endpoints, redistype.RedisClusterFailed, err.Error())
 		return err
 	}
 
-	if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
+	if endpoints == nil || len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
 		return fmt.Errorf("endpoints.Subsets is nil, maybe statefulset %v/%v has been deleted", latestRedisCluster.Namespace, latestRedisCluster.Name)
 	}
+
+	sortEndpointsByPodName(endpoints)
 
 	var phase redistype.RedisClusterPhase
 	if latestRedisCluster.Status.Phase == redistype.RedisClusterFailed {
@@ -178,6 +181,18 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 		return err
 
 	case redistype.RedisClusterScaling:
+
+		isClusteredAddress, isOnlyKnownSelfAddress, err := rco.getIsClusteredAndOnlyKnownSelfAddress(addresses)
+		if err != nil {
+			rco.updateRedisClusterStatus(latestRedisCluster, endpoints, redistype.RedisClusterFailed, clusterStateFailed)
+			return err
+		}
+
+		//表示新集群,所有实例都没有初始化,开始初始化集群
+		if int32(len(isOnlyKnownSelfAddress)) == *latestRedisCluster.Spec.Replicas || len(isClusteredAddress) == 0 {
+			return rco.createAndInitRedisCluster(latestRedisCluster)
+		}
+
 		//复制出一个Endpoints
 		oldEndpoints := endpoints.DeepCopy()
 		//没有scale前的endpoint里address应该是Conditions长度
@@ -190,6 +205,16 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 		if err != nil {
 			rco.updateRedisClusterStatus(latestRedisCluster, endpoints, redistype.RedisClusterFailed, clusterStateFailed)
 			return err
+		}
+
+		//全部节点形成集群,更新状态为Running
+		/*if len(isOnlyKnownSelfAddress) == 0 || int32(len(isClusteredAddress)) == *latestRedisCluster.Spec.Replicas {
+			_, err := rco.updateRedisClusterStatus(latestRedisCluster, endpoints, redistype.RedisClusterRunning, "")
+			return err
+		}*/
+
+		if int32(len(isOnlyKnownSelfAddress)) == *latestRedisCluster.Spec.Replicas || len(isClusteredAddress) == 0 {
+			return rco.createAndInitRedisCluster(latestRedisCluster)
 		}
 
 		//复制出一个Endpoints
@@ -334,7 +359,7 @@ func (rco *RedisClusterOperator) checkAndUpdateRedisClusterStatus(redisCluster *
 
 		return err
 	default:
-		glog.Warningf("deleting or none phase shouldn't reach hear")
+		glog.Warningf("this is unreachable, phase: %v ", phase)
 		return nil
 	}
 
@@ -458,6 +483,10 @@ func composeMasterSlaveIP(newAddresses []v1.EndpointAddress, existedMasterInstan
 		}
 	}
 
+	if len(willAddClusterAddr) == 0 {
+		return nil, nil, nil, nil
+	}
+
 	willAssignMasterCount := len(newAddresses)/2 - len(existedMasterInstanceIPs)
 
 	//分配master
@@ -553,7 +582,7 @@ func composeMasterSlaveIP(newAddresses []v1.EndpointAddress, existedMasterInstan
 	}
 
 	// Rotating the list sometimes helps to get better initial anti-affinity before the optimizer runs.
-	interleaved = append(interleaved[1:], interleaved[:1]...)
+	//interleaved = append(interleaved[1:], interleaved[:1]...)
 
 	//选slave
 	var willAddClusterSlaveIPs, slaveParentIps []string
